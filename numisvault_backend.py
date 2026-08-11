@@ -375,9 +375,121 @@ def fetch_ebay_search(query, payload):
             print(f"[eBay]   -> EXCEPTION: {e}", flush=True)
     return [], None, last_err
 
+# ---- Numista catalogue lookup: composition, weight, diameter, images. ----
+# Official, documented, keyed REST API (not scraping) — https://en.numista.com/api/doc/index.php
+# Auth: HTTP header "Numista-API-Key: <key>". Key is read ONLY from the
+# NUMISTA_API_KEY environment variable — it must never be hardcoded here.
+NUMISTA_API_KEY = os.environ.get("NUMISTA_API_KEY", "")
+NUMISTA_BASE = "https://api.numista.com/v3"
+
+def numista_search(query, category="coin", count=5):
+    if not NUMISTA_API_KEY:
+        return None, "NUMISTA_API_KEY is not configured on the server."
+    try:
+        r = requests.get(
+            f"{NUMISTA_BASE}/types",
+            params={"q": query, "category": category, "count": count, "lang": "en"},
+            headers={"Numista-API-Key": NUMISTA_API_KEY},
+            timeout=15,
+        )
+        print(f"[Numista] search '{query}' -> HTTP {r.status_code}", flush=True)
+        if r.status_code != 200:
+            return None, f"HTTP {r.status_code}: {r.text[:200]}"
+        data = r.json()
+        # Defensive: different API versions/wrappers have nested this differently.
+        types = data.get("types")
+        if types is None and isinstance(data.get("data"), dict):
+            types = data["data"].get("types")
+        return (types or []), None
+    except Exception as e:
+        print(f"[Numista]   -> EXCEPTION: {e}", flush=True)
+        return None, str(e)
+
+def numista_get_type(type_id):
+    try:
+        r = requests.get(
+            f"{NUMISTA_BASE}/types/{type_id}",
+            headers={"Numista-API-Key": NUMISTA_API_KEY},
+            timeout=15,
+        )
+        print(f"[Numista] getType {type_id} -> HTTP {r.status_code}", flush=True)
+        if r.status_code != 200:
+            return None, f"HTTP {r.status_code}: {r.text[:200]}"
+        detail = r.json()
+        # Log the top-level keys once, so if a field name is off we can see the
+        # real shape in the Render logs instead of guessing blind.
+        print(f"[Numista]   -> top-level keys: {list(detail.keys())}", flush=True)
+        return detail, None
+    except Exception as e:
+        print(f"[Numista]   -> EXCEPTION: {e}", flush=True)
+        return None, str(e)
+
+def numista_pick(d, *paths):
+    """Try several dotted-path fallbacks (for uncertain nested field names)
+    and return the first present, non-None value."""
+    for path in paths:
+        node = d
+        ok = True
+        for key in path.split("."):
+            if isinstance(node, dict) and key in node:
+                node = node[key]
+            else:
+                ok = False
+                break
+        if ok and node is not None:
+            return node
+    return None
+
+@app.post("/api/coin-lookup")
+def coin_lookup():
+    """Catalogue lookup (NOT a market price): composition, weight, diameter,
+    obverse/reverse images, from the Numista catalogue API."""
+    payload = request.get_json(silent=True) or {}
+    coin = payload.get("coin") or {}
+    query = " ".join(str(x) for x in [coin.get("countryEN") or coin.get("country"), coin.get("denom"), coin.get("year")] if x).strip()
+    if not query:
+        query = (payload.get("raw_query") or "").strip()
+    if not query:
+        return jsonify({"error": "empty query"}), 400
+
+    results, err = numista_search(query)
+    if err:
+        return jsonify({"match": None, "error": err}), 200
+    if not results:
+        return jsonify({"match": None, "note": "Δεν βρέθηκε καταχώρηση στο Numista για αυτό το query."})
+
+    best = results[0]  # Numista already returns results ranked by its own relevance.
+    type_id = numista_pick(best, "id")
+    if type_id is None:
+        return jsonify({"match": None, "note": "Μη αναμενόμενη απάντηση Numista (λείπει id)."})
+
+    detail, derr = numista_get_type(type_id)
+    if derr:
+        return jsonify({"match": None, "error": derr})
+
+    composition = numista_pick(detail, "composition.text", "composition")
+    weight = numista_pick(detail, "weight")
+    diameter = numista_pick(detail, "size", "diameter")
+    obverse_img = numista_pick(detail, "obverse.picture", "obverse_picture", "obverse.thumbnail")
+    reverse_img = numista_pick(detail, "reverse.picture", "reverse_picture", "reverse.thumbnail")
+    title = numista_pick(detail, "title") or numista_pick(best, "title")
+    issuer = numista_pick(detail, "issuer.name") or numista_pick(best, "issuer.name")
+
+    return jsonify({"match": {
+        "id": type_id,
+        "title": title,
+        "issuer": issuer,
+        "composition": composition,
+        "weight_g": weight,
+        "diameter_mm": diameter,
+        "obverse_image": obverse_img,
+        "reverse_image": reverse_img,
+        "url": f"https://en.numista.com/catalogue/pieces{type_id}.html",
+    }})
+
 @app.get("/health")
 def health():
-    return jsonify({"ok":True,"service":"NumisVault backend (MA-Shops)"})
+    return jsonify({"ok":True,"service":"NumisVault backend (MA-Shops + Numista)","numista_configured":bool(NUMISTA_API_KEY)})
 
 @app.post("/api/coin-search")
 def coin_search():
