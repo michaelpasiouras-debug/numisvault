@@ -1,0 +1,333 @@
+{
+  "schema_version": 1,
+  "purpose": "Seed issue-level validation and numismatic ontology for CoinBids. Extend from trusted catalog/API data; do not treat this seed as an exhaustive world coin catalog.",
+  "negative_terms": [
+    "banknote",
+    "bank note",
+    "paper money",
+    "replica",
+    "copy",
+    "reproduction",
+    "medal",
+    "token",
+    "coin set",
+    "set",
+    "roll",
+    "rouleau",
+    "lot of",
+    "bulk lot",
+    "fantasy issue",
+    "souvenir"
+  ],
+  "catalog_prefixes": {
+    "KM": [
+      "km",
+      "km#",
+      "krause",
+      "krause mishler"
+    ],
+    "Y": [
+      "y",
+      "y#"
+    ],
+    "Schön": [
+      "schon",
+      "schön",
+      "schoen"
+    ],
+    "Pick": [
+      "pick",
+      "p#",
+      "pick#"
+    ],
+    "RIC": [
+      "ric"
+    ],
+    "Cohen": [
+      "cohen"
+    ]
+  },
+  "issuers": [
+    {
+      "canonical": "George I of Greece",
+      "country_code": "GR",
+      "aliases": [
+        "george i",
+        "georgios i",
+        "γεωργιος α",
+        "γεώργιος α",
+        "king george i",
+        "george the first"
+      ],
+      "valid_from": 1863,
+      "valid_to": 1913
+    },
+    {
+      "canonical": "Paul of Greece",
+      "country_code": "GR",
+      "aliases": [
+        "paul",
+        "king paul",
+        "pavlos",
+        "παυλος",
+        "παύλος"
+      ],
+      "valid_from": 1947,
+      "valid_to": 1964
+    },
+    {
+      "canonical": "Constantine II of Greece",
+      "country_code": "GR",
+      "aliases": [
+        "constantine ii",
+        "konstantinos ii",
+        "κωνσταντινος β",
+        "κωνσταντίνος β",
+        "king constantine ii"
+      ],
+      "valid_from": 1964,
+      "valid_to": 1973
+    },
+    {
+      "canonical": "Elizabeth II",
+      "country_code": "GB",
+      "aliases": [
+        "elizabeth ii",
+        "queen elizabeth ii",
+        "elisabeth ii",
+        "ελizabeth ii",
+        "ελισαβετ β",
+        "ελισάβετ β"
+      ],
+      "valid_from": 1952,
+      "valid_to": 2022
+    },
+    {
+      "canonical": "Charles III",
+      "country_code": "GB",
+      "aliases": [
+        "charles iii",
+        "king charles iii",
+        "καρολος γ",
+        "κάρολος γ"
+      ],
+      "valid_from": 2022,
+      "valid_to": null
+    },
+    {
+      "canonical": "Wilhelm II",
+      "country_code": "DE",
+      "aliases": [
+        "wilhelm ii",
+        "kaiser wilhelm ii",
+        "william ii"
+      ],
+      "valid_from": 1888,
+      "valid_to": 1918
+    },
+    {
+      "canonical": "Napoleon III",
+      "country_code": "FR",
+      "aliases": [
+        "napoleon iii",
+        "napoléon iii",
+        "ναπολεων γ",
+        "ναπολέων γ"
+      ],
+      "valid_from": 1852,
+      "valid_to": 1870
+    }
+  ],
+  "mints": [
+    {
+      "country_code": "US",
+      "mintmark": "P",
+      "canonical": "Philadelphia",
+      "aliases": [
+        "philadelphia",
+        "philly",
+        "p"
+      ]
+    },
+    {
+      "country_code": "US",
+      "mintmark": "D",
+      "canonical": "Denver",
+      "aliases": [
+        "denver",
+        "d"
+      ]
+    },
+    {
+      "country_code": "US",
+      "mintmark": "S",
+      "canonical": "San Francisco",
+      "aliases": [
+        "san francisco",
+        "s"
+      ]
+    },
+    {
+      "country_code": "US",
+      "mintmark": "CC",
+      "canonical": "Carson City",
+      "aliases": [
+        "carson city",
+        "cc"
+      ]
+    },
+    {
+      "country_code": "US",
+      "mintmark": "O",
+      "canonical": "New Orleans",
+      "aliases": [
+        "new orleans",
+        "o"
+      ]
+    },
+    {
+      "country_code": "DE",
+      "mintmark": "A",
+      "canonical": "Berlin",
+      "aliases": [
+        "berlin",
+        "a"
+      ]
+    },
+    {
+      "country_code": "DE",
+      "mintmark": "D",
+      "canonical": "Munich",
+      "aliases": [
+        "munich",
+        "münchen",
+        "muenchen",
+        "d"
+      ]
+    },
+    {
+      "country_code": "DE",
+      "mintmark": "F",
+      "canonical": "Stuttgart",
+      "aliases": [
+        "stuttgart",
+        "f"
+      ]
+    },
+    {
+      "country_code": "DE",
+      "mintmark": "G",
+      "canonical": "Karlsruhe",
+      "aliases": [
+        "karlsruhe",
+        "g"
+      ]
+    },
+    {
+      "country_code": "DE",
+      "mintmark": "J",
+      "canonical": "Hamburg",
+      "aliases": [
+        "hamburg",
+        "j"
+      ]
+    }
+  ],
+  "variant_aliases": {
+    "proof": [
+      "proof",
+      "pp",
+      "polierte platte",
+      "belle epreuve",
+      "belle épreuve"
+    ],
+    "unc": [
+      "unc",
+      "uncirculated",
+      "bu",
+      "brilliant uncirculated",
+      "stempelglanz",
+      "fleur de coin"
+    ],
+    "commemorative": [
+      "commemorative",
+      "commem",
+      "gedenkmunze",
+      "gedenkmünze",
+      "αναμνηστικο",
+      "αναμνηστικό"
+    ],
+    "error": [
+      "error",
+      "mint error",
+      "misstrike",
+      "double strike",
+      "off center",
+      "off-centre"
+    ],
+    "colorized": [
+      "colorized",
+      "colourized",
+      "colored",
+      "coloured"
+    ],
+    "privy": [
+      "privy",
+      "privy mark"
+    ],
+    "small_date": [
+      "small date"
+    ],
+    "large_date": [
+      "large date"
+    ]
+  },
+  "issues": [
+    {
+      "country_code": "GR",
+      "currency_code": "GRD",
+      "denomination_value": 5,
+      "year": 1976,
+      "canonical_title": "Greece 5 Drachmai 1976",
+      "issuer": "Hellenic Republic",
+      "mint": null,
+      "mintmark": null,
+      "catalog_ids": {},
+      "variants": [
+        "standard"
+      ],
+      "confidence_source": "seed_verified_structure"
+    },
+    {
+      "country_code": "HR",
+      "currency_code": "EUR",
+      "denomination_value": 2,
+      "year": 2025,
+      "canonical_title": "Croatia 2 Euro 2025",
+      "issuer": "Republic of Croatia",
+      "mint": null,
+      "mintmark": null,
+      "catalog_ids": {},
+      "variants": [
+        "standard",
+        "commemorative_possible"
+      ],
+      "confidence_source": "seed_verified_structure"
+    },
+    {
+      "country_code": "US",
+      "currency_code": "USD",
+      "denomination_value": 0.25,
+      "year": 1964,
+      "canonical_title": "United States Quarter Dollar 1964",
+      "issuer": "United States of America",
+      "mint": null,
+      "mintmark": null,
+      "catalog_ids": {},
+      "variants": [
+        "standard"
+      ],
+      "confidence_source": "seed_verified_structure"
+    }
+  ]
+}
