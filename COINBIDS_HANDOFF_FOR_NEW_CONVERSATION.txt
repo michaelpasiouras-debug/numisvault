@@ -1,0 +1,353 @@
+COINBIDS — ΠΛΗΡΕΣ HANDOFF ΓΙΑ ΝΕΑ ΣΥΝΟΜΙΛΙΑ
+Ημερομηνία: 2026-08-15 (ενημερώθηκε μετά το 2ο code review / fix pass)
+Ιδιοκτήτης: Alex Pasiouras (coinbids.eu)
+
+═══════════════════════════════════════════════════════════════
+ΟΔΗΓΙΕΣ ΓΙΑ ΤΟ ΝΕΟ CLAUDE ΠΟΥ ΘΑ ΔΙΑΒΑΣΕΙ ΑΥΤΟ ΤΟ ΑΡΧΕΙΟ
+═══════════════════════════════════════════════════════════════
+
+Διάβασε ΟΛΟΚΛΗΡΟ αυτό το αρχείο πριν κάνεις οτιδήποτε. Τα 4 συνημμένα αρχεία
+(index.html, numisvault_backend.py, coin_identity_resolver.py,
+coin_identity_database.json, coin_issue_database.json — 5 στο σύνολο) είναι η
+ΤΕΛΕΥΤΑΙΑ ΓΝΩΣΤΗ-ΚΑΛΗ, δοκιμασμένη έκδοση — ό,τι είναι live (ή σχεδόν live)
+στο coinbids.eu.
+
+ΚΡΙΣΙΜΟΣ ΚΑΝΟΝΑΣ #1 — ΤΟ COIN INTELLIGENCE CORE ΕΧΕΙ ΗΔΗ ΕΝΣΩΜΑΤΩΘΕΙ:
+Ένα παλιότερο handoff document (πριν το Coin Intelligence Core pass) έλεγε
+"ΔΕΝ ΕΧΕΙ ΕΝΣΩΜΑΤΩΘΕΙ ΑΚΟΜΑ" και έδινε οδηγίες ενσωμάτωσης. Αυτό ΔΕΝ ισχύει
+πια. Το Coin Intelligence Core (issuer/ruler resolution, mint/mintmark
+context-aware, catalog IDs KM#/Y#/Pick#/RIC, variant normalization,
+negative-terms filtering, issue-existence validation, listing match score
+0-100) είναι ΗΔΗ μέσα στα τρέχοντα αρχεία. Αν ο χρήστης ανεβάσει ξανά τα
+παλιά "v2"/"Core" πακέτα (CoinBids_Coin_Intelligence_Core.html,
+coin_identity_resolver_v2.py, coinbids_backend_coin_intelligence.py,
+coin_identity_database_v2.json), ΜΗΝ τα ενσωματώσεις ξανά και ΜΗΝ
+αντικαταστήσεις τα τρέχοντα αρχεία με αυτά — είναι παλιότερη, λιγότερο
+εξελιγμένη γραμμή κώδικα (λείπουν π.χ. smart_join, 68-νομισμάτων dictionary,
+DOM-scoped shipping, ScrapingBee, grade hard-gate, rate limiting) και έχουν
+γνωστά bugs (βλ. ενότητα 4).
+
+ΚΡΙΣΙΜΟΣ ΚΑΝΟΝΑΣ #2 — ΓΕΝΙΚΟΣ ΚΑΝΟΝΑΣ ΓΙΑ ΝΕΑ ΑΝΕΒΑΣΜΕΝΑ ΑΡΧΕΙΑ:
+Αν ο χρήστης ανεβάσει ΝΕΑ αρχεία (π.χ. από άλλο AI session, ChatGPT, ή
+παλιότερο δικό του αντίγραφο) και ζητήσει να τα "ελέγξεις" ή να τα
+"εφαρμόσεις" — ΜΗΝ τα αντικαταστήσεις τυφλά. Πάντα:
+1. Διάβασε πλήρως τα νέα αρχεία.
+2. Σύγκρινε (diff/μέγεθος/markers) με τα τρέχοντα γνωστά-καλά αρχεία.
+3. Επαλήθευσε ΚΑΘΕ ισχυρισμό/εύρημα εμπειρικά (τρέξε πραγματικό κώδικα, μην
+   εμπιστευτείς κείμενο που λέει "αυτό είναι bug" χωρίς να το αναπαραγάγεις
+   πρώτα ο ίδιος). Ένα κείμενο εύρημα μπορεί να είναι μερικώς λάθος (π.χ. το
+   ακριβές παράδειγμα που δίνει να μην αναπαράγεται, ενώ ένα παραπλήσιο ναι).
+4. Αν είναι παλιότερα/μικρότερα, εξήγησε καθαρά στον χρήστη τι θα χανόταν.
+5. Κάνε ΣΥΓΧΩΝΕΥΣΗ (πάρε μόνο τις πραγματικά καλές νέες ιδέες, πάνω στη βάση
+   των ήδη διορθωμένων αρχείων) — όχι αντικατάσταση.
+6. Μετά από κάθε αλλαγή: compile/syntax check (Python + JS) ΚΑΙ regression
+   test suite (παλιό + νέο) πριν παραδώσεις οτιδήποτε.
+7. Μην ισχυριστείς ότι κάτι "δουλεύει" αν δεν το έτρεξες πραγματικά.
+
+Ο χρήστης επικοινωνεί στα Ελληνικά. Απάντα στα Ελληνικά.
+
+Ο χρήστης ΔΕΝ είναι προγραμματιστής βαθιά, αλλά είναι τεχνικά ικανός και
+προσεκτικός — του αρέσει να βλέπει αποδείξεις (test output, live e2e tests)
+πριν εμπιστευτεί μια αλλαγή, ειδικά μετά από τα πολλά bugs που βρέθηκαν σε
+προηγούμενα ανεβασμένα πακέτα.
+
+═══════════════════════════════════════════════════════════════
+1. ΤΙ ΕΙΝΑΙ ΤΟ COINBIDS
+═══════════════════════════════════════════════════════════════
+
+Numismatic (νομισματική) web εφαρμογή στο coinbids.eu:
+- Προσωπική συλλογή νομισμάτων (Dashboard, My Collection, Add/Order,
+  Wishlist, Sales)
+- Price Research: αυτόματη αναζήτηση τιμών σε MA-Shops (scraping) +
+  eBay/Delcampe (χειροκίνητοι σύνδεσμοι — δεν γίνεται αυτόματο scraping)
+- Identify Coin: αναγνώριση νομίσματος από περιγραφή (Coin Identity Resolver)
+- Auction Intelligence: εκτίμηση αγοραστικής αξίας / fair value
+- Research Settings
+
+ΑΡΧΙΤΕΚΤΟΝΙΚΗ (5 αρχεία, όλα "τρέχουσα γνωστή-καλή έκδοση"):
+- Frontend: index.html (HTML+CSS+JS όλα μαζί, καμία εξάρτηση εκτός Google
+  Fonts CDN + XLSX.js CDN)
+- Backend: numisvault_backend.py — Flask app, το ΜΟΝΟ backend αρχείο.
+  (Σημείωση: το filename παραμένει "numisvault_backend.py" για ιστορικούς
+  λόγους — η υπηρεσία λέγεται CoinBids εσωτερικά, δεν χρειάζεται rename.)
+- coin_identity_resolver.py + coin_identity_database.json +
+  coin_issue_database.json: μοιρασμένος Coin Intelligence Core resolver,
+  χρησιμοποιείται από Identify Coin, Price Research, και Auction
+  Intelligence, τόσο frontend όσο και backend (server-side fallback στο
+  make_queries() του backend).
+- Στατικά αρχεία deployment: Procfile, requirements_coinbids.txt,
+  README_COINBIDS.txt (δεν χρειάζονται συνημμένα εκτός αν κάτι σχετικό με
+  deployment χρειαστεί).
+
+HOSTING: Render (backend+frontend), Cloudflare (DNS/domain), ScrapingBee
+(προαιρετικό, geo-targeted shipping), cron-job.org (keep-alive ping στο
+/health). Πλήρης οδηγός deployment σε ξεχωριστό PDF (CoinBids Deployment
+Cheat Sheet) που έχει ήδη δοθεί στον χρήστη.
+
+═══════════════════════════════════════════════════════════════
+2. COIN INTELLIGENCE CORE — ΤΙ ΕΙΝΑΙ ΕΝΕΡΓΟ ΤΩΡΑ
+═══════════════════════════════════════════════════════════════
+
+Ο coin_identity_resolver.py (μαζί με coin_identity_database.json για
+χώρες/νομίσματα και coin_issue_database.json για issuers/mints/catalog
+IDs/variants/negative-terms/seed issues) υποστηρίζει:
+
+- Singular/plural, Greek/Greeklish/transliteration, τόνους, typos (fuzzy,
+  ΣΥΝΤΗΡΗΤΙΚΟ — βλ. ενότητα 4.1 για τα όρια του fuzzy matching)
+- Ιστορικά νομίσματα με valid_from/valid_to (π.χ. "10 Deutsche Mark 2020" →
+  REVIEW, όχι αποδοχή· "Wilhelm II Germany 5 mark 1900" → σωστά resolved στο
+  ιστορικό "German mark" 1871-1948, ΟΧΙ στο μεταπολεμικό "Deutsche Mark")
+- Ambiguous χωρίς χώρα (π.χ. "2 euro 2025" → REVIEW, ΔΕΝ μαντεύει)
+- Issuer/ruler resolution, context+validity-bound (ένας κυβερνήτης που
+  πέθανε πριν το έτος του νομίσματος ΔΕΝ πιστώνεται ως issuer — απόρριψη,
+  όχι απλή ποινή)
+- Mint/mintmark context-aware (D=Denver στις ΗΠΑ, D=Munich στη Γερμανία — ΔΕΝ
+  μαντεύει mintmark χωρίς γνωστή χώρα)
+- Catalog IDs (KM#/Y#/Pick#/RIC) — εξάγονται ΚΑΙ αφαιρούνται (masked) από το
+  κείμενο ΠΡΙΝ το year/denomination parsing, ώστε ένας αριθμός καταλόγου
+  (π.χ. "KM#123") να μην μπερδευτεί ποτέ με την ονομαστική αξία
+- Bare "P" (χωρίς #) ΔΕΝ ερμηνεύεται ποτέ ως Pick catalog αριθμός — μόνο
+  "Pick", "Pick#", "P#" μετράνε· bare "P" μένει διαθέσιμο για mintmark
+- Variant normalization (proof/UNC/commemorative/error/privy/κλπ)
+- Negative-terms filtering (banknote/replica/set/lot/κλπ) — ΔΙΠΛΟ επίπεδο:
+  ο resolver βάζει status=review, ΚΑΙ το backend passes_hard_filter()
+  απορρίπτει εντελώς τέτοια listings ως δεύτερη ανεξάρτητη γραμμή άμυνας
+- Issue-existence validation πάνω σε seed database (coin_issue_database.json)
+  — ΠΡΟΣΟΧΗ: seed, ΟΧΙ εξαντλητικός κατάλογος. "not_in_local_issue_db" ΔΕΝ
+  σημαίνει "δεν υπάρχει" — σημαίνει "δεν βρέθηκε στο μερικό τοπικό seed,
+  επαλήθευσε μέσω καταλόγου/API". Αυτή η διάκριση είναι ρητή τόσο στο JSON
+  (μέσα στο "purpose" field) όσο και στο frontend (Identify Coin εμφανίζει
+  ρητά "not evidence it does not exist" δίπλα σε αυτό το status).
+- Explicit country > adjectival currency-name overlap (π.χ. "Liechtenstein 1
+  Swiss franc 1924" → σωστά Liechtenstein, ΟΧΙ Switzerland, παρόλο που το
+  "swiss" είναι επίσης country alias για Ελβετία — tie-break προς το πιο
+  συγκεκριμένο/μεγαλύτερο alias match)
+- Δύο ιστορικά διαφορετικά νομισματικά συστήματα που μοιράζονται τον ίδιο
+  εμφανιζόμενο κωδικό (π.χ. DEM = και "Deutsche Mark" 1948-2001 και "German
+  mark" 1871-1948) διαχωρίζονται εσωτερικά με object identity, όχι με τον
+  κωδικό — ώστε το σωστό ιστορικό σύστημα να επιλέγεται ανάλογα με ΠΟΙΟ alias
+  ταίριαξε πραγματικά, όχι πάντα το πρώτο στη λίστα.
+
+listing_match_score() (0-100, εμφανίζεται στο Price Research/Auction
+Intelligence evidence panel):
+- Κανονικοποιημένο πάνω μόνο στα πεδία που ΟΝΤΩΣ υπάρχουν στη resolved
+  ταυτότητα (country/year/denomination/currency + προαιρετικά issuer/
+  mint/variant) — ένα τέλειο ταίριασμα σε όλα τα διαθέσιμα πεδία φτάνει σε
+  πραγματικά υψηλό score (~100), δεν "κολλάει" χαμηλά απλά επειδή κάποιο
+  προαιρετικό μεταδεδομένο (issuer/mint/variant) δεν υπήρχε καν στη
+  ζητούμενη ταυτότητα.
+- Αναγνωρίζει σημασιολογικά denomination aliases (π.χ. "quarter" = 0.25 USD,
+  "dime" = 0.10 USD) μέσω του ίδιου special_denominations ontology, όχι μόνο
+  κυριολεκτικά ψηφία.
+- Λάθος year/denomination τιμωρούνται έντονα (extra penalty πέρα από την
+  απώλεια πόντων).
+- Negative terms (replica/banknote/κλπ) περιορίζουν το score σε ανώτατο 20
+  ανεξάρτητα από το πόσο "καθαρό" φαινόταν το υπόλοιπο κείμενο.
+
+Backend integration:
+- /api/resolve-coin, /api/validate-issue, /api/listing-match-score endpoints
+- make_queries() χρησιμοποιεί resolver δεδομένα ΜΟΝΟ όταν status=="resolved"
+  (ΟΧΙ "review" — ένα REVIEW αποτέλεσμα δεν αντιμετωπίζεται ποτέ ως
+  επικυρωμένη ταυτότητα για αυτόματη κατασκευή ερωτημάτων αγοράς)
+- coin_search() επισυνάπτει identity_match_score/reasons σε κάθε listing ως
+  επεξηγηματικό evidence — ΔΕΝ αλλάζει ποτέ ποια listings περνάνε το
+  passes_hard_filter() ή πώς ταξινομούνται/επιλέγονται τελικά
+- passes_hard_filter() έχει δεύτερο, ανεξάρτητο επίπεδο απόρριψης negative
+  terms πέρα από το classify_asset/product_scope
+
+Frontend integration:
+- Identify Coin εμφανίζει issuer/ruler, mint, catalog IDs, variants, issue
+  validation status
+- Price Research: αν ο backend resolver απαντήσει με REVIEW/unresolved
+  (ακόμα κι αν ο παλιός τοπικός parser τυχαία γέμισε country/denom/year), η
+  αναζήτηση ΔΕΝ προχωράει σιωπηλά — δείχνεται το review μήνυμα και σταματάει.
+  Ο τοπικός parser λειτουργεί ΜΟΝΟ ως fallback για γνήσια αποτυχία του
+  backend (network/timeout), όχι ως μηχανισμός παράκαμψης ενός σκόπιμου
+  REVIEW.
+- Auction Intelligence: απαιτεί έγκυρο θετικό αριθμό στο "Current bid" πριν
+  υπολογίσει BUY/FAIR/STOP verdict — ένα κενό πεδίο ΔΕΝ γίνεται πια σιωπηλά
+  0 (κάτι που θα μπορούσε να δείξει ψευδώς "STRONG BUY"). Το "sell" mode δεν
+  χρειάζεται τρέχουσα προσφορά και δεν επηρεάζεται.
+
+═══════════════════════════════════════════════════════════════
+3. DEPLOYMENT
+═══════════════════════════════════════════════════════════════
+
+Βλ. το ξεχωριστό PDF "CoinBids Deployment Cheat Sheet" που έχει ήδη δοθεί
+στον χρήστη — καλύπτει GitHub (πώς ανεβάζεις αρχεία), Render (auto-deploy,
+env vars, /health check, logs), Cloudflare (DNS, σπάνια χρειάζεται αλλαγή),
+ScrapingBee (προαιρετικό key), cron-job.org (keep-alive).
+
+Περίληψη env vars στο Render: NUMISTA_API_KEY, COINBIDS_CORS_ORIGINS,
+SCRAPINGBEE_API_KEY (προαιρετικό), COINBIDS_RATE_LIMIT_PER_MIN (προαιρετικό).
+
+Μετά από κάθε deploy, έλεγξε https://www.coinbids.eu/health — πρέπει να
+δείχνει "resolver_available": true.
+
+═══════════════════════════════════════════════════════════════
+4. ΙΣΤΟΡΙΚΟ BUGS ΠΟΥ ΔΙΟΡΘΩΘΗΚΑΝ (2ο code review pass, 2026-08-15)
+═══════════════════════════════════════════════════════════════
+
+Αυτά διορθώθηκαν ΠΑΝΩ στην ήδη ενσωματωμένη βάση του Coin Intelligence Core
+(όχι επανασχεδιασμός). Όλα επαληθεύτηκαν εμπειρικά πριν/μετά τη διόρθωση, όχι
+απλά με βάση το κείμενο του review:
+
+4.1 Fuzzy resolver false positives: λέξεις-stopwords 2 γραμμάτων (no/us/be/
+    at) fuzzy-ταίριαζαν με κωδικούς νομισμάτων (NOK/USD/BEF/ATS) επειδή το
+    SequenceMatcher score για τόσο κοντά strings ξεπερνούσε συχνά το
+    threshold καθαρά τυχαία. Fix: fuzzy matching πλέον αγνοεί aliases με
+    μήκος <5 χαρακτήρων — το exact matching (που ήδη είχε το δικό του
+    stopword-collision filter) παραμένει πλήρως διαθέσιμο, το typo
+    correction για ουσιαστικές λέξεις ("drahcma"→"drachma") δεν επηρεάστηκε.
+
+4.2 Price Research μπορούσε να παρακάμψει resolver REVIEW: αν ο backend
+    resolver απαντούσε με REVIEW αλλά ο παλιός τοπικός parser έτυχε να
+    γεμίσει country+denom+year (π.χ. "Germany 10 Deutsche Mark 2020" με ρητή
+    χώρα — ΟΧΙ το bare "10 Deutsche Mark 2020" όπως το αρχικό παράδειγμα του
+    review, που στην πραγματικότητα ΔΕΝ αναπαρήγαγε το πρόβλημα επειδή ο
+    τοπικός parser δεν καταλαβαίνει "Deutsche" ως Germany χωρίς να το πεις
+    ρητά), η αναζήτηση προχωρούσε σιωπηλά. Fix: όποτε ο backend resolver
+    απαντήσει επιτυχώς με status≠resolved, δείχνεται πάντα review μήνυμα,
+    ανεξάρτητα από το τι βρήκε ο τοπικός parser.
+
+4.3 Backend make_queries() δεχόταν REVIEW: server-side resolver integration
+    δεχόταν status in ("resolved","review") αντί μόνο "resolved". Fix: μόνο
+    "resolved" θεωρείται επικυρωμένη ταυτότητα για αυτόματη κατασκευή
+    ερωτημάτων αγοράς.
+
+4.4 Αριθμός καταλόγου γινόταν ονομαστική αξία: "KM#123 5 drachmai 1976"
+    μπορούσε να δώσει denomination=123 αντί για 5. Fix: τα catalog IDs
+    εξάγονται και "καλύπτονται" (masked) στο κείμενο ΠΡΙΝ το year/
+    denomination parsing.
+
+4.5 Bare "P" mintmark συγκρουόταν με Pick catalog: "USA quarter P 1964"
+    έδινε ΚΑΙ mintmark=P (σωστό) ΚΑΙ Pick=1964 (λάθος). Fix: μόνο "Pick",
+    "Pick#", "P#" (με # ρητά) μετράνε ως Pick· bare "P" + αριθμός ποτέ.
+
+4.6 Ιστορική σύγκρουση γερμανικού νομίσματος: "Deutsche Mark" (1948-2001)
+    και "German mark" (1871-1948) μοιράζονταν το ίδιο εμφανιζόμενο code
+    "DEM" στη βάση, οπότε ο resolver πάντα επέλεγε το πρώτο (Deutsche Mark)
+    ανεξάρτητα από ποιο alias ταίριαξε πραγματικά — π.χ. "Wilhelm II Germany
+    5 mark 1900" σημείωνε λάθος REVIEW αντί για σωστό resolved στο ιστορικό
+    σύστημα. Fix: εσωτερικό keying με object identity αντί για τον
+    εμφανιζόμενο κωδικό, ώστε τα δύο συστήματα να παραμένουν διακριτά.
+
+4.7 Liechtenstein/Swiss franc ασάφεια: το "swiss" είναι καταχωρημένο ως
+    πλήρες country alias για Ελβετία, οπότε "Liechtenstein 1 Swiss franc
+    1924" ενεργοποιούσε ΚΑΙ τις δύο χώρες εξίσου. Fix: όταν πολλές χώρες
+    ισοβαθμούν σε πλήρη εμπιστοσύνη, προτιμάται αυτή με το πιο συγκεκριμένο
+    (μεγαλύτερο) alias match — ρητή ονομασία χώρας νικά επιθετικό/
+    νομισματικό όρο που τυχαίνει να επικαλύπτεται.
+
+4.8 identity_match_score κακή βαθμονόμηση: καθαρά ταιριάσματα έδειχναν
+    παραπλανητικά χαμηλό score (π.χ. 76/100, ή 58/100 για "United States
+    1964 quarter dollar" επειδή το "quarter" δεν περιέχει κυριολεκτικά τα
+    ψηφία "0.25"). Fix: κανονικοποίηση πάνω μόνο στα διαθέσιμα πεδία της
+    ζητούμενης ταυτότητας (τέλειο ταίριασμα → ~100, όχι artificial ceiling
+    λόγω απόντων προαιρετικών πεδίων), και αναγνώριση σημασιολογικών
+    denomination aliases (quarter/dime/κλπ) μέσω του ήδη υπάρχοντος
+    special_denominations ontology.
+
+4.9 "Δύο φθηνότερα all-in" shipping selection bias: το ScrapingBee
+    geo-verification έτρεχε ΜΕΤΑ το τελικό top-2 cut, οπότε ένα φθηνό listing
+    με άγνωστο shipping μπορούσε να αποκλειστεί πριν προλάβει να ελεγχθεί,
+    ακόμα κι αν το πραγματικό (επαληθευμένο) all-in κόστος του θα το έκανε
+    το φθηνότερο. Fix: πριν το τελικό cut, γίνεται geo-verification σε
+    υποψήφια με άγνωστο shipping ΠΟΥ έχουν μαθηματική πιθανότητα να μπουν
+    στην πρώτη 2άδα (τιμή είδους ≤ τρέχον 2ο-καλύτερο επιβεβαιωμένο σύνολο),
+    διατηρώντας παράλληλα την οικονομία ScrapingBee credits (μόνο πραγματικά
+    υποψήφια ελέγχονται, όχι όλα).
+
+4.10 Cache key υπερβολικά στενό: το _search_cache_key() δεν περιλάμβανε
+    καθόλου το raw_query/canonical ταυτότητα, οπότε δύο εντελώς διαφορετικά
+    ελεύθερα ερωτήματα με άδειο structured "coin" object μπορούσαν να
+    μοιραστούν το ίδιο cache key και το ένα να σερβίρει σιωπηλά τα
+    αποτελέσματα του άλλου. Fix: το raw_query/canonical identity, καθώς και
+    scan_limit/sample_limit, προστέθηκαν στο κλειδί.
+
+4.11 Auction Intelligence: κενό "Current bid" πεδίο γινόταν σιωπηλά 0
+    (`Number(value)||0`), που μπορούσε να δείξει ψευδώς "STRONG BUY" χωρίς
+    ο χρήστης να έχει καν εισάγει προσφορά. Fix: για mode="buy" απαιτείται
+    έγκυρος θετικός αριθμός πριν υπολογιστεί οποιοδήποτε BUY/FAIR/STOP
+    verdict — αλλιώς εμφανίζεται ρητό μήνυμα. Το "sell" mode δεν επηρεάζεται
+    (δεν χρειάζεται τρέχουσα προσφορά).
+
+4.12 (Τεκμηρίωση) coin_issue_database.json είναι SEED, όχι εξαντλητικός
+    κατάλογος — ήδη σωστά τεκμηριωμένο τόσο στο JSON (purpose field) όσο
+    και στο frontend/backend wording ("not_in_local_issue_db" ≠ "δεν
+    υπάρχει"). Επιβεβαιώθηκε ότι παραμένει σωστό, καμία αλλαγή κώδικα
+    χρειάστηκε.
+
+Regression testing μετά τις παραπάνω διορθώσεις: 40/40 tests πέρασαν
+(resolver-level, περιλαμβάνει το πλήρες προηγούμενο test suite + νέα tests
+για κάθε ένα από τα παραπάνω), plus πλήρες live Flask end-to-end testing
+(resolve-coin, validate-issue, listing-match-score endpoints, make_queries()
+integration, cache key, passes_hard_filter negative-terms).
+
+═══════════════════════════════════════════════════════════════
+5. ΓΝΩΣΤΟΙ ΠΕΡΙΟΡΙΣΜΟΙ (ΤΙΜΙΑ, ΟΧΙ ΚΡΥΜΜΕΝΑ)
+═══════════════════════════════════════════════════════════════
+
+- coin_issue_database.json είναι SEED με μόνο 3 πλήρεις issue records αυτή
+  τη στιγμή — "not_in_local_issue_db" ΔΕΝ σημαίνει "δεν υπάρχει το νόμισμα".
+  Μακροπρόθεσμα χρειάζεται εμπλουτισμός από αξιόπιστη πηγή καταλόγου/API.
+- H11: "1.234 EUR" (μόνο τελεία, χωρίς κόμμα) παραμένει διφορούμενο — ΔΕΝ
+  μαντεύεται σιωπηλά.
+- eBay: ΔΕΝ γίνεται αυτόματο scraping (PerimeterX/JS challenge block) —
+  μόνο χειροκίνητος σύνδεσμος. Ήδη αποφασισμένο ότι δεν αξίζει τον κόπο· αν
+  ξαναδείς κώδικα eBay auto-scraping σε κάποιο ανεβασμένο πακέτο, ΜΗΝ τον
+  ενσωματώσεις.
+- Region-inference λίστα (Crete→Greece, Sicily→Italy, κλπ) ΔΕΝ είναι
+  εξαντλητική.
+- ScrapingBee: δωρεάν tier 1000 credits/μήνα, ~2 credits/αναζήτηση σε
+  κανονικές συνθήκες (μπορεί να αυξηθεί ελαφρώς όταν το νέο pre-cut
+  verification της ενότητας 4.9 ελέγχει επιπλέον υποψήφια, αλλά παραμένει
+  περιορισμένο/bounded ανά αναζήτηση — δεν ελέγχει ΚΑΘΕ άγνωστο-shipping
+  listing, μόνο αυτά με πραγματική μαθηματική πιθανότητα να μπουν στην
+  πρώτη 2άδα).
+- Render free tier: κοιμάται μετά από αδράνεια, cold start ~30-60δ.
+
+═══════════════════════════════════════════════════════════════
+6. ΣΤΥΛ ΕΡΓΑΣΙΑΣ ΠΟΥ ΕΚΤΙΜΑ Ο ΧΡΗΣΤΗΣ
+═══════════════════════════════════════════════════════════════
+
+- Πάντα compile/syntax check (python3 -m py_compile, node --check) πριν
+  παραδώσεις οτιδήποτε.
+- Πάντα μικρό αλλά ουσιαστικό regression test suite (τα παλιά tests ΚΑΙ νέα
+  για το συγκεκριμένο bug/feature) — δείξε τα PASS/FAIL αποτελέσματα.
+- Επαλήθευσε ΚΑΘΕ ισχυρισμό εμπειρικά πριν τον αποδεχτείς ή τον διορθώσεις —
+  ακόμα κι ένα λεπτομερές, καλογραμμένο "code review" έγγραφο μπορεί να έχει
+  παραδείγματα που στην πραγματικότητα δεν αναπαράγουν το πρόβλημα όπως
+  περιγράφεται (βλ. 4.2 παραπάνω) — βρες το πραγματικό ρεαλιστικό
+  παράδειγμα που αναπαράγει το ζήτημα πριν διορθώσεις.
+- Όποτε είναι εφικτό: live end-to-end test με πραγματικό τρέχον Flask
+  server (όχι μόνο static code review), ειδικά για resolver/backend
+  integration.
+- Ξεκάθαρη εξήγηση ΤΙ ήταν το πρόβλημα και ΓΙΑΤΙ συνέβαινε, όχι μόνο "το
+  διόρθωσα".
+- Ποτέ μην υπόσχεσαι κάτι δεν έχεις δοκιμάσει. Αν κάτι δεν μπορεί να
+  δοκιμαστεί στο τοπικό περιβάλλον (π.χ. πραγματικό MA-Shops scraping,
+  πραγματικό ScrapingBee API call), πες το ρητά — μην το σημειώσεις PASS
+  υποθετικά.
+- Μετά από κάθε αλλαγή στο index.html ΚΑΙ/Ή numisvault_backend.py, δώσε ΚΑΙ
+  τα δύο (ή όσα άλλαξαν) ξεκάθαρα, με σαφή οδηγία τι να ανεβάσει στο GitHub.
+
+═══════════════════════════════════════════════════════════════
+7. ΑΡΧΕΙΑ ΠΟΥ ΠΡΕΠΕΙ ΝΑ ΔΩΣΕΙ Ο ΧΡΗΣΤΗΣ ΣΤΗ ΝΕΑ ΣΥΝΟΜΙΛΙΑ
+═══════════════════════════════════════════════════════════════
+
+ΥΠΟΧΡΕΩΤΙΚΑ (η τρέχουσα, γνωστή-καλή βάση):
+  1. index.html
+  2. numisvault_backend.py
+  3. coin_identity_resolver.py
+  4. coin_identity_database.json
+  5. coin_issue_database.json
+
+Αν ο χρήστης αναφέρει "Coin Intelligence Core" σαν να μην έχει ενσωματωθεί
+ακόμα, ή ανεβάσει ξανά τα παλιά v2/Core πακέτα ζητώντας ενσωμάτωση — ενημέρωσέ
+τον ότι είναι ήδη ενσωματωμένο στα τρέχοντα αρχεία και ρώτησε αν εννοεί κάτι
+συγκεκριμένο που λείπει ή δεν δουλεύει όπως περίμενε.
+
+═══════════════════════════════════════════════════════════════
+ΤΕΛΟΣ HANDOFF DOCUMENT
+═══════════════════════════════════════════════════════════════
