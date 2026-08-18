@@ -1,0 +1,267 @@
+COINBIDS — SEO & PUBLIC WEBSITE PHASE — CHANGELOG
+====================================================
+Nothing was deployed automatically. Everything below is for your review
+before you upload anything.
+
+============================================================
+1. WHAT ACTUALLY CHANGED, IN PLAIN TERMS
+============================================================
+- coinbids.eu/  → now a real public marketing homepage (crawlable, no login
+  required).
+- coinbids.eu/app → the existing authenticated app (Supabase login, then the
+  full SPA) — same file as before, just moved off the root URL.
+- 4 new public pages: /identify-coin, /coin-value, /auction-intelligence,
+  /metal-value.
+- /robots.txt, /sitemap.xml, /site.webmanifest, /favicon.ico — new.
+- A real 404 page instead of Flask's default.
+
+============================================================
+2. ⚠ CRITICAL — VERIFY THIS BEFORE DEPLOYING
+============================================================
+Moving the app from / to /app required changing AUTH_REDIRECT_URL inside
+index.html from "https://coinbids.eu" to "https://coinbids.eu/app". This is
+the URL Supabase sends people back to after email confirmation and after
+Google OAuth completes. I changed it and tested the code path locally, but
+I could NOT verify this against your actual live Supabase project (no
+access to it from here). Please explicitly test, right after deploying:
+  1. Sign up with a new email → confirm the email link lands on /app with
+     you logged in (not on the public homepage, not an error).
+  2. "Continue with Google" → confirm it lands on /app logged in.
+If either lands on the public homepage instead, logged out, that's this
+value not being picked up correctly — tell me and we'll fix it before
+anything else.
+
+I did NOT find any reason a Google Cloud Console change is needed (the
+OAuth redirect URI registered there is Supabase's own callback URL, not
+this one), but I could not verify your actual Google Cloud project
+configuration from here — worth a quick look if step 2 above fails.
+
+============================================================
+3. DOMAIN CONSISTENCY
+============================================================
+All canonical URLs, sitemap entries, robots.txt, and Open Graph tags use
+https://coinbids.eu (no www), matching your existing production domain and
+the existing AUTH_REDIRECT_URL convention. I initially drafted these with a
+www prefix by mistake, caught it myself during testing, and corrected every
+occurrence — flagging this so you know to double check your DNS/Render
+custom domain setup doesn't force www, which would create a mismatch with
+what's in these files.
+
+============================================================
+4. FILES IN THIS DELIVERY
+============================================================
+Core app (updated):
+  numisvault_backend.py   — new routes, see §5
+  index.html               — only change: AUTH_REDIRECT_URL (§2)
+
+New public pages:
+  public_home.html          → served at /
+  identify-coin.html        → served at /identify-coin
+  coin-value.html            → served at /coin-value
+  auction-intelligence.html → served at /auction-intelligence
+  metal-value.html           → served at /metal-value
+  404.html                   → served on any unknown URL
+
+New technical SEO files:
+  robots.txt, sitemap.xml, site.webmanifest
+
+New asset files (assets/ folder — upload this whole folder):
+  favicon.ico, favicon-16x16.png, favicon-32x32.png, apple-touch-icon.png,
+  android-chrome-192x192.png, android-chrome-512x512.png — all generated
+  from your EXISTING CoinBids logo (extracted from the base64 image already
+  embedded in index.html), not a new design.
+  og-image.png — a new share-preview image, built from the same existing
+  logo plus your existing brand colors (cream/gold/dark green) — the only
+  genuinely new visual asset in this delivery, used only for social-link
+  previews (Open Graph/Twitter), never shown inside the app itself.
+  public.css — stylesheet shared by the 6 public pages, reusing the exact
+  CSS custom properties (colors, radius, shadow) already defined in
+  index.html's :root, so the public site matches the app's look.
+
+Unchanged in this pass (not re-sent): coin_identity_resolver.py,
+coin_identity_database.json, coin_issue_database.json, all auction_*.py
+modules, resolver_corrections.py.
+
+============================================================
+5. FLASK ROUTING — EXACT CHANGES
+============================================================
+Removed:
+  GET /            (used to serve index.html directly)
+  GET /index.html  (used to serve index.html directly)
+
+Added:
+  GET /                        → public_home.html
+  GET /app                     → index.html (the actual app — unchanged file)
+  GET /index.html              → 301 redirect to /app (old bookmarks still work)
+  GET /identify-coin           → identify-coin.html
+  GET /coin-value              → coin-value.html
+  GET /auction-intelligence    → auction-intelligence.html
+  GET /metal-value             → metal-value.html
+  GET /robots.txt              → robots.txt (text/plain)
+  GET /sitemap.xml             → sitemap.xml (application/xml)
+  GET /site.webmanifest        → site.webmanifest (application/manifest+json)
+  GET /favicon.ico             → assets/favicon.ico
+  GET /assets/<filename>       → serves any file from the assets/ folder
+  404 handler                  → 404.html, with a real HTTP 404 status code
+
+============================================================
+6. GITHUB / RENDER FILE STRUCTURE
+============================================================
+Your app is NOT on GitHub Pages — it's a Flask app (numisvault_backend.py)
+running on Render, which is more flexible than GitHub Pages for this and
+needed no special folder/routing workaround. Just add these new files
+alongside your existing ones in the same repository root:
+
+  numisvault_backend.py   (replace)
+  index.html               (replace)
+  public_home.html         (new)
+  identify-coin.html       (new)
+  coin-value.html          (new)
+  auction-intelligence.html (new)
+  metal-value.html         (new)
+  404.html                 (new)
+  robots.txt               (new)
+  sitemap.xml              (new)
+  site.webmanifest         (new)
+  assets/                  (new folder — upload all 8 files inside it)
+
+CNAME (your coinbids.eu custom domain) is unaffected — nothing about domain
+configuration changes here.
+
+============================================================
+7. STRUCTURED DATA (JSON-LD)
+============================================================
+Added to every public page: Organization + WebSite. Added to every page
+except the homepage: BreadcrumbList (the homepage doesn't need one — it IS
+the top of the breadcrumb).
+No FAQPage, Product, Review, Rating, or Author markup was added — none of
+those would accurately describe these pages, and the instructions were
+explicit about not fabricating structured data just to chase rich results.
+Every JSON-LD block was validated as syntactically correct JSON (see test
+results, §11) — I could not run this through Google's own Rich Results Test
+tool from this environment (no access to it), so please paste each page's
+JSON-LD there before considering it fully validated:
+https://search.google.com/test/rich-results
+
+============================================================
+8. GOOGLE SEARCH CONSOLE — YOUR STEPS
+============================================================
+1. Go to https://search.google.com/search-console, add coinbids.eu as a
+   property (Domain property, not URL-prefix, is usually simplest if your
+   DNS provider is accessible for a TXT record).
+2. Verify ownership. The simplest method for a domain you don't already
+   have GSC-linked: add a TXT record at your DNS provider — Search Console
+   gives you the exact value to add when you start this step. No file or
+   meta tag needs to be added to the site for this method, so nothing in
+   this delivery needs to change for it.
+   (Alternative: HTML-file verification — if you'd rather do that, tell me
+   and I'll add the specific verification file Google gives you; I have not
+   pre-added one since I don't have a real verification token to put in it.)
+3. Once verified, submit sitemap.xml: Search Console → Sitemaps → enter
+   "sitemap.xml" → Submit.
+4. Use URL Inspection on https://coinbids.eu/ → Request Indexing.
+5. Repeat URL Inspection + Request Indexing for the 4 feature pages.
+6. Do NOT request indexing for /app — it's intentionally excluded (§ the
+   robots.txt Disallow) since it's a login gate, not content.
+7. Check back in Search Console's Coverage/Indexing report after a few days
+   to confirm pages were actually indexed, not just submitted.
+
+============================================================
+9. ANALYTICS READINESS
+============================================================
+No analytics tag was added — you asked me not to invent a measurement ID,
+and I don't have a real one to add. When you have one (e.g. a Google
+Analytics 4 / GA4 measurement ID, or a privacy-conscious alternative like
+Plausible or Fathom), the right place to add it is a small script tag right
+before </head> in EACH of the 6 public HTML files (public_home.html,
+identify-coin.html, coin-value.html, auction-intelligence.html,
+metal-value.html, 404.html) — not inside index.html/app, since that's a
+separate, already-authenticated context with its own considerations around
+what's appropriate to track. Tell me the ID/snippet when you have it and
+I'll wire it in correctly, once, rather than you editing 6 files by hand.
+
+============================================================
+10. PUBLIC URLS TO SUBMIT / INDEX
+============================================================
+https://coinbids.eu/
+https://coinbids.eu/identify-coin
+https://coinbids.eu/coin-value
+https://coinbids.eu/auction-intelligence
+https://coinbids.eu/metal-value
+
+============================================================
+11. PRIVATE URLS — MUST NEVER BE INDEXED
+============================================================
+https://coinbids.eu/app  (excluded via robots.txt Disallow — this is the
+  ONLY app URL in this architecture; Collection/Pending/Wishlist/Sold are
+  tabs INSIDE this one authenticated page, not separate URLs, so there is
+  nothing further to individually exclude)
+https://coinbids.eu/api/*  (also excluded via robots.txt Disallow — your
+  backend's own JSON endpoints, never meant for browsers/crawlers directly)
+
+============================================================
+12. WHAT WAS DELIBERATELY NOT BUILT YET (per your own instructions)
+============================================================
+- /guides/ content hub — no articles written; you said prepare the
+  architecture, not populate it yet. The /guides/ path itself isn't wired
+  up in Flask yet either, since there's genuinely nothing to serve there —
+  tell me when you have real article topics ready and I'll set up the
+  route + first pages together.
+- /coins/<country>/<denomination>-<year> individual coin pages — not built,
+  per your explicit "prepare, do not mass-generate yet" instruction.
+- Any keyword-stuffed, doorway, or auto-generated filler content — none was
+  written. Every paragraph on every page describes something CoinBids
+  genuinely does, based on the actual, current behavior of the app (I built
+  every feature described, across this whole project, so this isn't guesswork).
+
+============================================================
+13. TEST RESULTS — everything below was actually executed
+============================================================
+PYTHON: numisvault_backend.py + all existing modules compile cleanly with
+the new routes added.
+
+HTML: all 6 new public pages pass a real HTML parser's tag-balance check
+(0 mismatched/unclosed tags each).
+
+JSON-LD: every structured-data block on every page parses as valid JSON
+(Organization, WebSite, BreadcrumbList as applicable). NOT verified against
+Google's Rich Results Test — see §7.
+
+SITEMAP: sitemap.xml parses as valid XML, contains exactly the 5 intended
+public URLs, no private ones.
+
+LIVE ROUTING (real Flask test client, 19 checks, all passed):
+  - / serves the public homepage, not the authenticated app shell
+  - /app serves the actual authenticated app
+  - /index.html correctly 301-redirects to /app
+  - all 4 feature pages return 200 with the right content
+  - robots.txt/sitemap.xml/site.webmanifest/favicon.ico/assets all serve
+    correctly with correct content-types
+  - an unknown URL returns an ACTUAL HTTP 404 status (not 200 with a 404-
+    looking page) with useful, noindex'd content
+
+LINK CHECK: every internal link across all 6 public pages (17 found) was
+crawled against the real Flask app; all 12 internal relative links resolve
+successfully (the other 5 are the pages' own absolute canonical URLs,
+consistent with the routes that do exist).
+
+VISUAL: rendered the homepage and one feature page at both desktop
+(1200px) and mobile (390px) widths and inspected them directly — caught and
+fixed one real bug this way (navigation and footer links were rendering
+with no visible spacing between them; fixed with explicit margins so it's
+correct regardless of the rendering engine's flexbox gap support).
+
+REGRESSION: the full existing 119-test suite (auction intelligence,
+valuation, sell engine, FX, backtest harness, resolver corrections) plus
+the resolver baseline and the Cretan State fix all still pass — this phase
+did not touch any of that code, and testing confirms nothing broke.
+
+WHAT I COULD NOT TEST FROM THIS ENVIRONMENT
+- Your actual live Supabase auth redirect behavior (§2 — please verify this
+  one specifically, it's the one correctness-critical change to existing
+  behavior in this whole phase).
+- Google's Rich Results Test / actual Search Console indexing behavior.
+- Real Core Web Vitals (LCP/INP/CLS) measurement, which requires a live
+  deployed URL and real-user or Lighthouse data — the pages are built to
+  the right principles (minimal JS, no render-blocking heavy scripts, real
+  content in initial HTML) but I have no live URL to actually measure yet.
