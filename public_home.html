@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>
+// If this browser already has a live, non-expired Supabase session, skip the
+// marketing page and go straight into the authenticated app.
+(function(){
+  try{
+    for(var i=0;i<localStorage.length;i++){
+      var k=localStorage.key(i);
+      if(k && k.indexOf('sb-')===0 && k.indexOf('-auth-token')===k.length-11){
+        var raw=localStorage.getItem(k);
+        if(!raw) continue;
+        var parsed=JSON.parse(raw);
+        var expiresAt=parsed && parsed.expires_at;
+        if(expiresAt && expiresAt*1000>Date.now()){
+          window.location.replace('/app');
+          break;
+        }
+      }
+    }
+  }catch(e){}
+})();
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CoinBids — Identify, Value and Research Your Coins</title>
+<meta name="description" content="Identify coins, research current market value, compare auction results, calculate metal value, and manage your collection with CoinBids.">
+<link rel="canonical" href="https://www.coinbids.eu/">
+<link rel="stylesheet" href="/public.css">
+
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<meta property="og:title" content="CoinBids — Identify, Value and Research Your Coins">
+<meta property="og:description" content="Identify coins, research current market value, compare auction results, calculate metal value, and manage your collection with CoinBids.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://www.coinbids.eu/">
+<meta property="og:image" content="https://www.coinbids.eu/og-image.png">
+<meta property="og:site_name" content="CoinBids">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="CoinBids — Identify, Value and Research Your Coins">
+<meta name="twitter:description" content="Identify coins, research current market value, compare auction results, calculate metal value, and manage your collection with CoinBids.">
+<meta name="twitter:image" content="https://www.coinbids.eu/og-image.png">
+
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Organization","name":"CoinBids","url":"https://www.coinbids.eu/","logo":"https://www.coinbids.eu/apple-touch-icon.png"}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebSite","name":"CoinBids","url":"https://www.coinbids.eu/","potentialAction":{"@type":"SearchAction","target":"https://www.coinbids.eu/coin-value?q={search_term_string}","query-input":"required name=search_term_string"}}
+</script>
+</head>
+
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="/" aria-label="CoinBids home">
+      <img src="/apple-touch-icon.png" alt="CoinBids logo" width="54" height="54">
+      <span>CoinBids</span>
+    </a>
+
+    <nav class="site-nav" aria-label="Main">
+      <a href="/identify-coin">Identify Coin</a>
+      <a href="/coin-value">Coin Value</a>
+      <a href="/auction-intelligence">Auction Intelligence</a>
+      <a href="/metal-value">Metal Value</a>
+    </nav>
+
+    <div class="header-actions">
+      <a class="btn btn-ghost" href="/app">Log in</a>
+      <a class="btn btn-gold" href="/app">Sign up free</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <div class="eyebrow">Numismatic research, simplified</div>
+      <h1>Identify, value and research <em>your coins.</em></h1>
+      <p class="lead">
+        One workspace for coin identification, current market research,
+        auction intelligence and intrinsic metal value.
+      </p>
+
+      <div class="cta-group">
+        <a class="btn btn-gold btn-large" href="/app">Start free</a>
+        <a class="btn btn-ghost btn-large" href="#tools">Explore tools</a>
+      </div>
+
+      <div class="hero-proof" aria-label="Product highlights">
+        <span>Market research</span>
+        <span>Auction data</span>
+        <span>Collection tools</span>
+        <span>Built for collectors</span>
+      </div>
+    </div>
+
+    <div class="hero-visual" aria-hidden="true">
+      <div class="coin-orbit orbit-one"></div>
+      <div class="coin-orbit orbit-two"></div>
+      <div class="coin-display">
+        <div class="coin-rim">
+          <div class="coin-inner">
+            <div class="coin-brand-emblem">
+              <img src="/apple-touch-icon.png" alt="">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="hero-float-card float-top">
+        <span class="float-label">MARKET</span>
+        <strong>Recent listings</strong>
+      </div>
+      <div class="hero-float-card float-bottom">
+        <span class="float-label">AUCTION</span>
+        <strong>Comparable results</strong>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tools-section" id="tools">
+  <div class="container">
+    <div class="section-heading">
+      <span class="eyebrow">Research tools</span>
+      <h2>Everything you need around one coin</h2>
+      <p>Move from identification to valuation without jumping between unrelated tools.</p>
+    </div>
+
+    <div class="feature-grid">
+      <a class="feature-card-link featured" href="/identify-coin">
+        <div class="feature-icon">◎</div>
+        <div class="feature-copy">
+          <span class="feature-kicker">01 · IDENTIFY</span>
+          <h3>Identify Coin</h3>
+          <p>Start from a photo or description and narrow down country, denomination, year and type.</p>
+          <span class="feature-cta">Identify a coin →</span>
+        </div>
+      </a>
+
+      <a class="feature-card-link" href="/coin-value">
+        <div class="feature-icon">€</div>
+        <div class="feature-copy">
+          <span class="feature-kicker">02 · VALUE</span>
+          <h3>Coin Value</h3>
+          <p>Research current market asking prices and compare relevant listings.</p>
+          <span class="feature-cta">Research value →</span>
+        </div>
+      </a>
+
+      <a class="feature-card-link" href="/auction-intelligence">
+        <div class="feature-icon">⌁</div>
+        <div class="feature-copy">
+          <span class="feature-kicker">03 · AUCTIONS</span>
+          <h3>Auction Intelligence</h3>
+          <p>Review comparable auction outcomes and put buying opportunities in context.</p>
+          <span class="feature-cta">Explore auctions →</span>
+        </div>
+      </a>
+
+      <a class="feature-card-link" href="/metal-value">
+        <div class="feature-icon">◇</div>
+        <div class="feature-copy">
+          <span class="feature-kicker">04 · METAL</span>
+          <h3>Metal Value</h3>
+          <p>Estimate intrinsic precious-metal value from weight, fineness and current metal prices.</p>
+          <span class="feature-cta">Calculate metal value →</span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="research-flow">
+  <div class="container">
+    <div class="flow-panel">
+      <div>
+        <span class="eyebrow">One research flow</span>
+        <h2>From “what is this?” to “what is it worth?”</h2>
+      </div>
+
+      <div class="flow-steps" aria-label="Coin research process">
+        <div class="flow-step"><span>1</span><strong>Identify</strong></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><span>2</span><strong>Research</strong></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><span>3</span><strong>Compare</strong></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step"><span>4</span><strong>Decide</strong></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final-cta">
+  <div class="container final-cta-inner">
+    <div>
+      <span class="eyebrow">CoinBids</span>
+      <h2>Research the coin, not the noise.</h2>
+      <p>Keep identification, market research and auction context in one place.</p>
+    </div>
+    <a class="btn btn-gold btn-large" href="/app">Open CoinBids</a>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <a class="brand brand-footer" href="/">
+        <img src="/apple-touch-icon.png" alt="" width="42" height="42">
+        <span>CoinBids</span>
+      </a>
+      <p>Tools for coin identification, valuation and market research.</p>
+    </div>
+
+    <div class="footer-links">
+      <a href="/">Home</a>
+      <a href="/identify-coin">Identify Coin</a>
+      <a href="/coin-value">Coin Value</a>
+      <a href="/auction-intelligence">Auction Intelligence</a>
+      <a href="/metal-value">Metal Value</a>
+      <a href="/app">Log in / Sign up</a>
+    </div>
+  </div>
+
+  <div class="container footer-legal">
+    <p>
+      CoinBids helps collectors identify coins, research current market and auction value,
+      and manage a collection in one place. Identification and valuation involve uncertainty
+      and should be treated as guidance, not a guarantee.
+    </p>
+    <p>&copy; www.coinbids.eu CoinBids.</p>
+  </div>
+</footer>
+</body>
+</html>
