@@ -3,3 +3,4 @@ flask-cors>=4.0,<7
 requests>=2.31,<3
 beautifulsoup4>=4.12,<5
 gunicorn>=22,<24
+psycopg2-binary>=2.9,<3
