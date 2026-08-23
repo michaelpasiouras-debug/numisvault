@@ -1596,52 +1596,140 @@ def auto_tick(enqueue_limit=20, max_seconds=22.0):
 
 
 def repair_false_gold_euro_cents():
-    """Conservative one-time repair for the Nordic-gold parser bug.
+    """Schema-aware conservative repair for the Nordic-gold parser bug.
 
-    Only exact standard 10/20/50 euro-cent physical profiles are touched.
-    Wrong MA-Shops Gold observations are quarantined (not rewritten as evidence);
-    canonical catalogue/production rows are restored to the known circulation alloy.
+    The production schemas for coin_catalog and coin_specs are not assumed to
+    contain the same columns. We introspect each table and update only columns
+    that actually exist. Exact 10/20/50 euro-cent physical profiles only.
     """
-    changed={"observations_quarantined":0,"coin_catalog_repaired":0,"coin_specs_repaired":0}
+    changed={
+        "observations_quarantined":0,
+        "coin_catalog_repaired":0,
+        "coin_specs_repaired":0,
+    }
     profiles=((0.10,4.10,19.75),(0.20,5.74,22.25),(0.50,7.80,24.25))
+
+    def columns(cur, table):
+        cur.execute("""
+            select column_name
+              from information_schema.columns
+             where table_schema='public' and table_name=%s
+        """,(table,))
+        return {r[0] for r in cur.fetchall()}
+
     with _conn() as conn:
         with conn.cursor() as cur:
+            obs_cols=columns(cur,"coin_observations")
+            catalog_cols=columns(cur,"coin_catalog")
+            specs_cols=columns(cur,"coin_specs")
+
+            # Required identity/physical columns must exist; otherwise fail
+            # without making a partial repair based on guesses.
+            required_catalog={"id","denomination","weight_g","diameter_mm","primary_metal"}
+            required_specs={"weight_g","diameter_mm","primary_metal"}
+            missing_catalog=sorted(required_catalog-catalog_cols)
+            missing_specs=sorted(required_specs-specs_cols)
+            if missing_catalog or missing_specs:
+                return {
+                    "ok":False,
+                    "error":"SCHEMA_MISSING_REQUIRED_COLUMNS",
+                    "missing":{
+                        "coin_catalog":missing_catalog,
+                        "coin_specs":missing_specs,
+                    },
+                    "database_touched":False,
+                }
+
             for denom,w,d in profiles:
-                # Quarantine bad dealer evidence only where the linked catalogue identity
-                # is an exact euro-cent physical profile.
-                cur.execute("""
-                    update public.coin_observations o
-                       set specs_usable=false,
-                           raw_data=coalesce(o.raw_data,'{}'::jsonb) || %s::jsonb
-                      from public.coin_catalog c
-                     where o.coin_id=c.id
-                       and lower(coalesce(o.source,''))='ma-shops'
-                       and lower(trim(coalesce(o.primary_metal,'')))='gold'
-                       and abs(c.denomination-%s)<=0.000001
-                       and abs(coalesce(o.weight_g,c.weight_g)-%s)<=0.08
-                       and abs(coalesce(o.diameter_mm,c.diameter_mm)-%s)<=0.18
-                """,(json.dumps({"quarantine":"NORDIC_GOLD_FALSE_GOLD_PARSER_BUG"}),denom,w,d))
-                changed["observations_quarantined"]+=cur.rowcount
-                cur.execute("""
+                # Quarantine false Gold observations if the relevant observation
+                # columns exist. This is evidence quarantine, never evidence rewrite.
+                if {"coin_id","source","primary_metal","specs_usable"}.issubset(obs_cols):
+                    raw_patch = ""
+                    params=[]
+                    if "raw_data" in obs_cols:
+                        raw_patch=", raw_data=coalesce(o.raw_data,'{}'::jsonb) || %s::jsonb"
+                        params.append(json.dumps({"quarantine":"NORDIC_GOLD_FALSE_GOLD_PARSER_BUG"}))
+                    sql=f"""
+                        update public.coin_observations o
+                           set specs_usable=false {raw_patch}
+                          from public.coin_catalog c
+                         where o.coin_id=c.id
+                           and lower(coalesce(o.source,''))='ma-shops'
+                           and lower(trim(coalesce(o.primary_metal,'')))='gold'
+                           and abs(c.denomination-%s)<=0.000001
+                           and abs(coalesce(o.weight_g,c.weight_g)-%s)<=0.08
+                           and abs(coalesce(o.diameter_mm,c.diameter_mm)-%s)<=0.18
+                    """
+                    cur.execute(sql,tuple(params+[denom,w,d]))
+                    changed["observations_quarantined"]+=cur.rowcount
+
+                # coin_catalog: update only columns that really exist.
+                sets=["primary_metal='Nordic gold'"]
+                params=[]
+                if "composition" in catalog_cols:
+                    sets.append("composition='Nordic gold'")
+                if "fineness_per_mille" in catalog_cols:
+                    sets.append("fineness_per_mille=null")
+                if "fine_metal_g" in catalog_cols:
+                    sets.append("fine_metal_g=null")
+                if "metadata" in catalog_cols:
+                    sets.append("metadata=coalesce(metadata,'{}'::jsonb) || %s::jsonb")
+                    params.append(json.dumps({"repair":"NORDIC_GOLD_FALSE_GOLD_PARSER_BUG"}))
+                if "updated_at" in catalog_cols:
+                    sets.append("updated_at=now()")
+                cur.execute(f"""
                     update public.coin_catalog
-                       set primary_metal='Nordic gold', composition='Nordic gold',
-                           fineness_per_mille=null, fine_metal_g=null,
-                           metadata=coalesce(metadata,'{}'::jsonb) || %s::jsonb, updated_at=now()
+                       set {", ".join(sets)}
                      where abs(denomination-%s)<=0.000001
-                       and abs(weight_g-%s)<=0.02 and abs(diameter_mm-%s)<=0.03
+                       and abs(weight_g-%s)<=0.02
+                       and abs(diameter_mm-%s)<=0.03
                        and lower(trim(coalesce(primary_metal,'')))='gold'
-                """,(json.dumps({"repair":"NORDIC_GOLD_FALSE_GOLD_PARSER_BUG"}),denom,w,d))
+                """,tuple(params+[denom,w,d]))
                 changed["coin_catalog_repaired"]+=cur.rowcount
-                cur.execute("""
+
+                # coin_specs: production schema currently has no composition
+                # column, so never assume one. Optional metal-value columns are
+                # nulled only if they exist.
+                sets=["primary_metal='Nordic gold'"]
+                if "composition" in specs_cols:
+                    sets.append("composition='Nordic gold'")
+                if "fineness_per_mille" in specs_cols:
+                    sets.append("fineness_per_mille=null")
+                if "fine_metal_g" in specs_cols:
+                    sets.append("fine_metal_g=null")
+
+                where=[
+                    "abs(weight_g-%s)<=0.02",
+                    "abs(diameter_mm-%s)<=0.03",
+                    "lower(trim(coalesce(primary_metal,'')))='gold'",
+                ]
+                params=[w,d]
+                if "country" in specs_cols:
+                    where.append("lower(trim(coalesce(country,''))) in %s")
+                    params.append(tuple(str(x).lower() for x in _EURO_COUNTRIES))
+
+                cur.execute(f"""
                     update public.coin_specs
-                       set primary_metal='Nordic gold', composition='Nordic gold',
-                           fineness_per_mille=null, fine_metal_g=null
-                     where abs(weight_g-%s)<=0.02 and abs(diameter_mm-%s)<=0.03
-                       and lower(trim(coalesce(primary_metal,'')))='gold'
-                       and lower(trim(coalesce(country,''))) in %s
-                """,(w,d,tuple(_EURO_COUNTRIES)))
+                       set {", ".join(sets)}
+                     where {" and ".join(where)}
+                """,tuple(params))
                 changed["coin_specs_repaired"]+=cur.rowcount
-    return {"ok":True,**changed,"scope":"exact standard 10/20/50 euro-cent physical profiles only"}
+
+            return {
+                "ok":True,
+                **changed,
+                "scope":"exact standard 10/20/50 euro-cent physical profiles only",
+                "schema_detected":{
+                    "coin_catalog_optional_columns":{
+                        k:(k in catalog_cols) for k in
+                        ("composition","fineness_per_mille","fine_metal_g","metadata","updated_at")
+                    },
+                    "coin_specs_optional_columns":{
+                        k:(k in specs_cols) for k in
+                        ("composition","fineness_per_mille","fine_metal_g")
+                    },
+                },
+            }
 
 def local_preflight():
     """DB-free smoke checks for deploy-time regressions in core helpers."""
