@@ -7,10 +7,11 @@ import email.utils
 from datetime import timezone
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 try:
-    from coin_identity_resolver import resolve_coin_identity, get_resolver
+    from coin_identity_resolver import resolve_coin_identity, get_resolver, transliterate_greek
     RESOLVER_AVAILABLE=True
 except Exception as _resolver_import_err:
     RESOLVER_AVAILABLE=False
+    transliterate_greek=lambda s:s or ""
     print(f"[resolver] coin_identity_resolver not available: {_resolver_import_err}")
 try:
     from auction_models import AuctionComparable
@@ -777,6 +778,230 @@ def country_in_title(country, title_norm):
     aliases=COUNTRY_CANON.get(target,[target])
     return any(norm(x) in a for x in aliases)
 
+# ============================================================================
+# GENERIC MULTILINGUAL THEME-WORD MATCHING
+# ============================================================================
+# Two complementary, purely LOCAL/offline techniques — no translation API,
+# no network call, no new failure mode in the search hot path:
+#
+# 1. THEME_WORD_TRANSLATIONS: a small, curated dictionary of common
+#    commemorative/numismatic THEME vocabulary (anniversary, independence,
+#    battle, olympics, coronation, ...) with known translations in the
+#    languages MA-Shops dealers most commonly use (EN/DE/FR/IT/ES/GR). Any
+#    word the user types that appears in this dictionary is recognized in
+#    ALL its listed language forms — this is what generalizes the original
+#    Antikythera-Mechanism fix to "anniversary"/"Jubiläum"/"anniversaire",
+#    "battle"/"Schlacht"/"bataille", etc. without hand-seeding every coin.
+#
+# 2. _theme_fuzzy_hit(): a conservative fuzzy/transliteration check for
+#    PROPER NOUNS that no dictionary can cover (place/person names like
+#    "Antikythera"/"Anticythère"/"Anticitera"/"Αντικύθηρα") — these mostly
+#    just get spelled slightly differently per language rather than
+#    translated outright, so similarity matching (reusing the same
+#    SequenceMatcher + Greek transliteration approach already used in
+#    coin_identity_resolver.py) catches them without an explicit alias.
+#    Threshold is deliberately conservative (0.82) and only applied to
+#    words of at least 5 characters, to avoid short/common-word false
+#    positives.
+# ============================================================================
+THEME_WORD_TRANSLATIONS=[
+    {"anniversary","jubiläum","jubilaeum","anniversaire","anniversario","aniversario","επετειος","επέτειος"},
+    {"independence","unabhängigkeit","unabhaengigkeit","indépendance","independance","indipendenza","independencia","ανεξαρτησια","ανεξαρτησία"},
+    {"battle","schlacht","bataille","battaglia","batalla","μαχη","μάχη"},
+    {"war","krieg","guerre","guerra","πολεμος","πόλεμος"},
+    {"victory","sieg","victoire","vittoria","victoria","νικη","νίκη"},
+    {"peace","frieden","paix","pace","paz","ειρηνη","ειρήνη"},
+    {"treaty","vertrag","traite","traité","trattato","tratado","συνθηκη","συνθήκη"},
+    {"coronation","kronung","krönung","couronnement","incoronazione","coronacion","coronación","στεψη","στέψη"},
+    {"wedding","hochzeit","mariage","matrimonio","boda","γαμος","γάμος"},
+    {"birth","geburt","naissance","nascita","nacimiento","γεννηση","γέννηση"},
+    {"death","tod","mort","morte","muerte","θανατος","θάνατος"},
+    {"olympic","olympics","olympiade","olympisch","jeux olympiques","olimpiadi","olimpiada","ολυμπιακοι","ολυμπιακοί"},
+    {"games","spiele","jeux","giochi","juegos","αγωνες","αγώνες"},
+    {"unity","einheit","unite","unité","unita","unità","unidad","ενοτητα","ενότητα"},
+    {"freedom","freiheit","liberte","liberté","liberta","libertà","libertad","ελευθερια","ελευθερία"},
+    {"constitution","verfassung","constitution","costituzione","constitucion","constitución","συνταγμα","σύνταγμα"},
+    {"republic","republik","republique","république","repubblica","republica","república","δημοκρατια","δημοκρατία"},
+    {"kingdom","königreich","koenigreich","royaume","regno","reino","βασιλειο","βασίλειο"},
+    {"empire","reich","empire","impero","imperio","αυτοκρατορια","αυτοκρατορία"},
+    {"saint","heilige","heiliger","saint","sainte","santo","santa","αγιος","άγιος","αγια","αγία"},
+    {"cathedral","dom","kathedrale","cathedrale","cathédrale","cattedrale","catedral","καθεδρικος","καθεδρικός"},
+    {"castle","schloss","burg","chateau","château","castello","castillo","καστρο","κάστρο"},
+    {"bridge","brucke","brücke","pont","ponte","puente","γεφυρα","γέφυρα"},
+    {"ship","schiff","navire","bateau","nave","barco","πλοιο","πλοίο"},
+    {"discovery","entdeckung","decouverte","découverte","scoperta","descubrimiento","ανακαλυψη","ανακάλυψη"},
+    {"mint","münze","muenze","monnaie","zecca","casa de moneda","νομισματοκοπειο","νομισματοκοπείο"},
+    {"mechanism","mechanismus","mecanisme","mécanisme","meccanismo","mecanismo","μηχανισμος","μηχανισμός"},
+    {"queen","königin","koenigin","reine","regina","reina","βασιλισσα","βασίλισσα"},
+    {"king","könig","koenig","roi","re","rey","βασιλιας","βασιλιάς"},
+    {"president","präsident","praesident","president","presidente","προεδρος","πρόεδρος"},
+    {"museum","museum","musee","musée","museo","museo","μουσειο","μουσείο"},
+    {"temple","tempel","temple","tempio","templo","ναος","ναός"},
+]
+
+def _theme_expand(word):
+    """Returns the full multilingual synonym group for `word` if it's in
+    THEME_WORD_TRANSLATIONS, else just {word} unchanged (graceful — an
+    unlisted word simply isn't translated, it still works exactly like
+    literal matching did before this feature existed)."""
+    w=norm(word)
+    for group in THEME_WORD_TRANSLATIONS:
+        if w in group:
+            return group
+    return {w}
+
+def _theme_fuzzy_hit(word, title_tokens, threshold=0.82):
+    """Conservative fuzzy/transliterated match for proper nouns not covered
+    by any dictionary (place/person names spelled differently per
+    language, e.g. Antikythera/Anticythère/Anticitera/Αντικύθηρα). Only
+    applied to words of >=5 characters to avoid short-word false
+    positives. A Greek-script word is transliterated to Latin first (reusing
+    coin_identity_resolver's own transliteration table) before comparing —
+    plain character-similarity between a Greek-script and a Latin-script
+    word would otherwise score near zero even for the same underlying name,
+    since they use entirely different alphabets."""
+    w=norm(word)
+    if len(w)<5:
+        return w in title_tokens
+    w_variants={w}
+    translit=norm(transliterate_greek(word))
+    if translit and translit!=w:
+        w_variants.add(translit)
+    for tok in title_tokens:
+        if len(tok)<5:continue
+        tok_variants={tok}
+        tok_translit=norm(transliterate_greek(tok))
+        if tok_translit and tok_translit!=tok:
+            tok_variants.add(tok_translit)
+        if any(SequenceMatcher(None,wv,tv).ratio()>=threshold for wv in w_variants for tv in tok_variants):
+            return True
+    return False
+
+def theme_word_matches_title(theme_raw, title):
+    """Soft, GENERIC multilingual match: True if the free-text theme
+    (any word(s) the user typed, e.g. "mechanism", "anniversary",
+    "Antikythera") is recognized in the listing title via (in order):
+    literal substring, a known dictionary translation
+    (THEME_WORD_TRANSLATIONS), or conservative fuzzy/transliteration
+    matching for proper nouns. Works for ANY coin, not just ones with a
+    seeded coin_issue_database.json alias list — see score_title() for
+    where this is used as a soft ranking signal, and _theme_issue_gate()
+    for the separate, curated hard gate used only for specifically seeded
+    issues."""
+    theme_raw=(theme_raw or "").strip()
+    if not theme_raw:return True
+    t_norm=norm(title)
+    t_tokens=set(t_norm.split())
+    words=[w for w in norm(theme_raw).split() if len(w)>=3]
+    if not words:return True
+    hits=0
+    for w in words:
+        group=_theme_expand(w)
+        if any(g and g in t_norm for g in group):
+            hits+=1;continue
+        if _theme_fuzzy_hit(w,t_tokens):
+            hits+=1
+    return hits>=max(1,len(words))  # ALL leftover theme words must be recognized (in some language)
+
+def theme_match_score(theme_raw, title):
+    """0.0-1.0 SOFT ranking bonus (never a hard filter) — fraction of the
+    theme's words recognized in the title via theme_word_matches_title's
+    same dictionary+fuzzy logic. Used by score_title() so that among
+    several otherwise-valid candidates, ones whose title actually matches
+    the requested theme (in whatever language) rank higher — without ever
+    excluding a candidate purely for not matching, which is exactly the
+    over-strict behavior this whole feature was built to avoid."""
+    theme_raw=(theme_raw or "").strip()
+    if not theme_raw:return 0.0
+    t_norm=norm(title)
+    t_tokens=set(t_norm.split())
+    words=[w for w in norm(theme_raw).split() if len(w)>=3]
+    if not words:return 0.0
+    hits=0
+    for w in words:
+        group=_theme_expand(w)
+        if any(g and g in t_norm for g in group):
+            hits+=1;continue
+        if _theme_fuzzy_hit(w,t_tokens):
+            hits+=1
+    return hits/len(words)
+
+# Minimal, bounded country-name -> issue-database country_code lookup, scoped
+# ONLY to _theme_issue_gate() below. Deliberately NOT the general-purpose
+# COUNTRY_CANON/canonical_country() machinery used everywhere else (country/
+# denomination/year hard filters are UNCHANGED by this feature) — this is
+# just enough to look up coin_issue_database.json's "issues" entries, which
+# currently only use a handful of ISO-style country_code values. Extend this
+# alongside any new issue record that needs it.
+_ISSUE_COUNTRY_NAME_TO_CODE={"greece":"GR","ελλαδα":"GR","ελλαs":"GR","hellas":"GR","hellenic republic":"GR"}
+
+def _theme_issue_gate(coin, title):
+    """Multilingual ISSUE/THEME identity gate — separate from, and does not
+    modify, variant_matches() (which stays literal/English and strict on
+    purpose for controlled condition/type categories like proof/UNC/
+    commemorative). This gate answers a different question: when a query's
+    leftover descriptive text (e.g. "mechanism" from "Greece 10 euros 2022
+    mechanism") clearly identifies ONE SPECIFIC known coin issue among
+    possibly several sharing the same country+denomination+year (looked up
+    in the shared coin_issue_database.json seed via the resolver), a
+    listing must be recognized (via theme_word_matches_title's dictionary+
+    fuzzy matching, not just literal substring) as matching THAT issue's
+    own canonical_title/aliases — in any of several languages/spellings,
+    not just English — to pass. This is what lets "Antikythera-Mechanismus"
+    (German), "Mécanisme d'Anticythère" (French) or a bare "Antikythera"
+    listing all correctly match a query written in English, while a
+    genuinely different Greek 2022 10-euro issue is correctly excluded.
+
+    Returns True (no gate — falls through to existing country/denom/year
+    behavior) whenever:
+      - there is no leftover theme text at all, or
+      - the resolver/issue database is unavailable, or
+      - no issue record for this country+denomination+year has an
+        "aliases" list at all (most issues don't — this is opt-in per
+        issue record, never a blanket new requirement), or
+      - the theme text doesn't clearly pick out one specific such issue
+        (ambiguous or no match against any candidate issue's own
+        canonical_title/aliases) — in which case this gate stays out of
+        the way rather than guessing.
+    Only once a SPECIFIC issue has been identified from the theme text does
+    this function start requiring a recognized match against one of that
+    issue's own aliases in the listing title."""
+    theme_raw=(coin.get("theme") or "").strip()
+    if not theme_raw or not RESOLVER_AVAILABLE:
+        return True
+    try:
+        issues=(get_resolver().issue_db or {}).get("issues") or []
+    except Exception:
+        return True
+    if not issues:
+        return True
+    country_n=norm(coin.get("country") or "")
+    code=next((c for name,c in _ISSUE_COUNTRY_NAME_TO_CODE.items() if name in country_n),None)
+    if not code:
+        return True
+    m=re.search(r"(\d+(?:\.\d+)?)",str(coin.get("denom") or coin.get("denomination") or ""))
+    denom_val=float(m.group(1)) if m else None
+    try:
+        year_val=int(coin.get("year") or 0) or None
+    except Exception:
+        year_val=None
+    candidates=[iss for iss in issues if iss.get("country_code")==code
+                and (denom_val is None or iss.get("denomination_value")==denom_val)
+                and (year_val is None or iss.get("year")==year_val)
+                and iss.get("aliases")]
+    if not candidates:
+        return True
+    theme_n=norm(theme_raw)
+    matched=None
+    for iss in candidates:
+        pool=[iss.get("canonical_title","")]+list(iss.get("aliases") or [])
+        if any(p and (theme_n in norm(p) or norm(p) in theme_n) for p in pool):
+            matched=iss;break
+    if not matched:
+        return True
+    return theme_word_matches_title(theme_raw,title) or any(
+        norm(al) in norm(title) for al in (matched.get("aliases") or []) if al)
+
 def passes_hard_filter(title, payload):
     coin=payload.get("coin") or {}
     a=norm(title)
@@ -794,6 +1019,7 @@ def passes_hard_filter(title, payload):
     if variant and not variant_matches(variant,title):return False
     grade=str(coin.get("grade") or "").strip()
     if grade and grade_conflicts(grade,title):return False
+    if not _theme_issue_gate(coin,title):return False
     # Coin Intelligence Core: reject explicit non-coin product listings
     # (banknote/replica/copy/reproduction/medal/token/set/roll/lot/...) as a
     # second, independent layer alongside classify_asset/product_scope above.
@@ -817,6 +1043,12 @@ def score_title(title, payload):
     if variant_matches(coin.get("variant") or "",title):score+=.10
     grade=coin.get("grade") or ""
     if grade and not grade_conflicts(grade,title) and grade_tier(title):score+=.08
+    # GENERIC multilingual theme ranking bonus (soft only — see
+    # theme_match_score docstring). Any coin's free-text theme, in any
+    # supported language/spelling, nudges matching listings higher without
+    # ever excluding non-matching ones from being valid candidates.
+    theme=coin.get("theme") or ""
+    if theme:score+=.12*theme_match_score(theme,title)
     return score
 
 def extract_from_jsonld(soup, source_url, payload):

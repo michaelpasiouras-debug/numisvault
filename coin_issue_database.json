@@ -328,6 +328,37 @@
         "standard"
       ],
       "confidence_source": "seed_verified_structure"
+    },
+    {
+      "country_code": "GR",
+      "currency_code": "EUR",
+      "denomination_value": 10,
+      "year": 2022,
+      "canonical_title": "Greece 10 Euro 2022 — Antikythera Mechanism",
+      "issuer": "Hellenic Republic",
+      "mint": null,
+      "mintmark": null,
+      "catalog_ids": {},
+      "variants": [
+        "standard"
+      ],
+      "aliases": [
+        "antikythera mechanism",
+        "antikythera",
+        "antikythera-mechanismus",
+        "mechanismus von antikythera",
+        "mecanisme d'anticythere",
+        "mécanisme d'anticythère",
+        "anticythere",
+        "anticythère",
+        "meccanismo di anticitera",
+        "anticitera",
+        "mecanismo de anticitera",
+        "μηχανισμος των αντικυθηρων",
+        "αντικυθηρα",
+        "αντικυθηρων"
+      ],
+      "confidence_source": "seed_verified_structure"
     }
   ]
 }

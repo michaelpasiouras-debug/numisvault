@@ -865,6 +865,23 @@ function ubRe(alts,flags){ return new RegExp(ubGroup(alts), (flags||'')+'u'); }
  // A one-letter residue is parser noise, not a numismatic variant.
  if(variant.length<2 || /^(?:o|e|r|u)$/i.test(variant)) variant='';
 
+ // Split the leftover descriptive residue into a CONTROLLED, strict-match
+ // `variant` (only recognized condition/type categories — the same
+ // canonical vocabulary coin_identity_resolver.py's issue database uses:
+ // proof/UNC/commemorative/error/colorized/privy/small date/large date)
+ // and a separate `theme` (everything else — a coin's SUBJECT, e.g.
+ // "mechanism", "owl", "bull"). Arbitrary theme words must NOT become a
+ // strict, single-language hard-match requirement — that was a real bug:
+ // "Greece 10 euros 2022 mechanism" rejected genuine listings worded
+ // "Antikythera-Mechanismus"/"Mécanisme d'Anticythère"/just "Antikythera".
+ // `theme` is still used below (search-query text, backend multilingual
+ // issue-alias identification via coin_issue_database.json "aliases") —
+ // it's not discarded, just no longer forced through the English-literal
+ // variant_matches() hard gate. variant_matches() itself is UNCHANGED.
+ const theme=variant;
+ const CONTROLLED_VARIANT_RE=/\b(?:proof|pp|unc|uncirculated|bu|commemorative|commem|error|misstrike|colorized|colourized|colored|coloured|privy|small\s*date|large\s*date)\b/gi;
+ variant=[...variant.matchAll(CONTROLLED_VARIANT_RE)].map(m=>m[0].toLowerCase()).join(' ').trim();
+
  // GRADE: extracted directly from the free text itself, not from an unrelated
  // page's DOM field — parseCoinText() is called from Research, Identify AND
  // Auction Intelligence, and only the Research page happens to have an
@@ -889,8 +906,10 @@ function ubRe(alts,flags){ return new RegExp(ubGroup(alts), (flags||'')+'u'); }
  };
  const variantNorm=variant.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
  const variantEN=variantNorm.split(/\s+/).filter(Boolean).map(w=>MOTIF_EN[w]||w).join(' ');
+ const themeNorm=theme.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+ const themeEN=themeNorm.split(/\s+/).filter(Boolean).map(w=>MOTIF_EN[w]||w).join(' ');
 
- return {raw,country,countryEN:countryEN||country,denom,year,variant,variantEN,grade};
+ return {raw,country,countryEN:countryEN||country,denom,year,variant,variantEN,theme,themeEN,grade};
 }
 function baseTerms(){
  const parsed=parseCoinText($('rFreeText')?.value||'');
@@ -903,9 +922,10 @@ function baseTerms(){
  return {...parsed,grade};
 }
 function searchVariants(t){
- const core=[t.country,t.denom,t.year].filter(Boolean).join(' '), extra=[t.variant,t.grade].filter(Boolean).join(' ');
+ const core=[t.country,t.denom,t.year].filter(Boolean).join(' '), extra=[t.variant,t.theme,t.grade].filter(Boolean).join(' ');
  const arr=[core,`${core} ${extra}`.trim(),`${t.country} ${t.year} ${t.denom}`.trim(),`${core} coin`.trim(),`${core} ${t.variant} coin`.trim()];
  if(t.grade) arr.push(`${core} ${t.grade}`);
+ if(t.theme) arr.push(`${core} ${t.theme}`);
  return [...new Set(arr.filter(Boolean))];
 }
 function providerLinks(q){const E=encodeURIComponent;return [
@@ -915,7 +935,7 @@ function providerLinks(q){const E=encodeURIComponent;return [
  ['eBay sold',`https://www.ebay.com/sch/i.html?_nkw=${E(q)}&LH_Sold=1&LH_Complete=1`]
 ]}
 function toEnglishTerms(t){
- return {country:t.countryEN||t.country, denom:t.denom, year:t.year, variant:t.variantEN||'', grade:t.grade};
+ return {country:t.countryEN||t.country, denom:t.denom, year:t.year, variant:t.variantEN||'', theme:t.themeEN||t.theme||'', grade:t.grade};
 }
 // Shared by "Create Deep Search" and "Copy search queries" so both buttons
 // consult the backend resolver identically and, critically, both ALWAYS
