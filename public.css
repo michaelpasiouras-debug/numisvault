@@ -592,3 +592,99 @@ a:focus,button:focus{outline:3px solid var(--gold-2);outline-offset:3px}
     max-height:168px!important;
   }
 }
+
+
+/* HERO EDITORIAL OBJECT — isolated replacement for the former hero logo artwork. */
+.hero-visual-editorial{isolation:isolate}
+.hero-visual-editorial::before{
+  content:"";position:absolute;width:330px;height:330px;border-radius:50%;z-index:0;
+  background:radial-gradient(circle at 42% 34%,rgba(255,255,255,.96) 0 16%,rgba(251,247,236,.92) 45%,rgba(232,220,191,.46) 72%,rgba(246,241,228,0) 73%);
+  box-shadow:0 28px 70px rgba(70,55,31,.08);
+}
+.editorial-plinth{
+  position:absolute;z-index:1;width:250px;height:58px;top:278px;border-radius:50%;
+  background:linear-gradient(180deg,rgba(255,253,247,.95),rgba(224,211,179,.72));
+  border:1px solid rgba(156,122,60,.20);box-shadow:0 24px 32px rgba(65,49,24,.12);
+}
+.collector-coin{
+  position:relative;z-index:2;width:224px;height:224px;border-radius:50%;padding:11px;
+  transform:translateY(-12px) rotate(-5deg);
+  background:linear-gradient(135deg,#f5df9d 0%,#cda65a 23%,#f6e6b5 48%,#a97930 72%,#e2c071 100%);
+  box-shadow:0 30px 46px rgba(66,48,20,.18),inset 0 1px 0 rgba(255,255,255,.8),inset 0 -2px 4px rgba(75,48,12,.20);
+}
+.collector-coin-ring{position:absolute;inset:9px;border:1px solid rgba(91,62,18,.32);border-radius:50%;box-shadow:inset 0 0 0 4px rgba(255,248,218,.24)}
+.collector-coin-face{
+  width:100%;height:100%;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:#6d5125;text-align:center;border:1px solid rgba(91,62,18,.20);
+  background:radial-gradient(circle at 36% 28%,rgba(255,255,255,.38),transparent 28%),linear-gradient(145deg,rgba(255,246,205,.34),rgba(139,94,29,.06));
+}
+.coin-monogram{font-size:46px;line-height:1;font-weight:500;letter-spacing:-.08em;color:#5d4829;text-shadow:0 1px rgba(255,255,255,.45)}
+.coin-rule{width:54px;height:1px;background:rgba(91,62,18,.38);margin:12px 0}
+.coin-mark{font-size:16px;line-height:1;color:#8f6b32}.coin-mark-top{margin-bottom:10px}.coin-mark-bottom{margin-top:10px}
+.research-lens{
+  position:absolute;z-index:4;width:112px;height:112px;border-radius:50%;margin:88px 0 0 154px;
+  border:8px solid #b68b43;background:radial-gradient(circle at 34% 28%,rgba(255,255,255,.70),rgba(255,253,244,.24) 46%,rgba(210,192,150,.12) 72%);
+  box-shadow:inset 0 0 0 2px rgba(255,245,210,.7),0 13px 24px rgba(54,41,22,.16);
+  transform:rotate(32deg);
+}
+.research-lens::after{content:"";position:absolute;width:84px;height:17px;left:91px;top:79px;border-radius:12px;background:linear-gradient(90deg,#b98d45 0 14%,#23332c 15% 82%,#b98d45 83%);box-shadow:0 7px 14px rgba(47,37,22,.18)}
+.hero-visual-editorial .float-top{right:-4px;top:56px}
+.hero-visual-editorial .float-bottom{left:-4px;bottom:54px}
+@media(max-width:640px){
+  .hero-visual-editorial::before{width:250px;height:250px}
+  .editorial-plinth{width:190px;height:44px;top:205px}
+  .collector-coin{width:170px;height:170px;padding:9px}
+  .coin-monogram{font-size:35px}.coin-rule{width:42px;margin:8px 0}
+  .research-lens{width:86px;height:86px;border-width:6px;margin:65px 0 0 118px}
+  .research-lens::after{width:64px;height:14px;left:70px;top:60px}
+}
+
+/* ATLANTIS HERO — isolated visual-only replacement. */
+.hero-visual-atlantis{isolation:isolate;min-height:440px}
+.hero-visual-atlantis::before{content:"";position:absolute;width:350px;height:350px;border-radius:50%;z-index:0;background:radial-gradient(circle at 45% 36%,rgba(255,255,255,.98) 0 18%,rgba(251,247,236,.93) 48%,rgba(229,215,183,.42) 72%,rgba(246,241,228,0) 73%);box-shadow:0 30px 72px rgba(70,55,31,.08)}
+.atlantis-plinth{position:absolute;z-index:1;width:310px;height:76px;top:316px;border-radius:50%;background:linear-gradient(180deg,#fffdf7 0%,#eee5d3 74%,#dfd1b7 100%);border:1px solid rgba(156,122,60,.16);box-shadow:0 26px 38px rgba(65,49,24,.12)}
+.atlantis-coin{position:relative;z-index:2;width:252px;height:252px;border-radius:50%;overflow:hidden;transform:translateY(-16px) rotate(-2deg);background:radial-gradient(circle at 35% 27%,#fff2bf 0 7%,#e9c978 28%,#c69642 62%,#8d6328 100%);border:3px solid #9b6d2a;box-shadow:0 30px 48px rgba(66,48,20,.20),inset 0 0 0 5px #e7c46d,inset 0 0 0 8px rgba(104,70,23,.38)}
+.atlantis-rim{position:absolute;inset:13px;border:2px solid rgba(91,62,18,.42);border-radius:50%;box-shadow:inset 0 0 0 5px rgba(255,239,179,.30)}
+.atlantis-rim::after{content:"";position:absolute;inset:7px;border-radius:50%;border:1px dashed rgba(91,62,18,.35)}
+.atlantis-sun{position:absolute;left:50%;top:38px;width:56px;height:56px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(circle,#f8e6a7 0 30%,rgba(238,204,116,.72) 31% 56%,rgba(255,235,164,0) 57%);box-shadow:0 0 0 1px rgba(101,70,24,.18)}
+.atlantis-sun::before{content:"";position:absolute;inset:-25px;background:repeating-conic-gradient(from 0deg,rgba(107,73,25,.20) 0 1deg,transparent 1deg 12deg);border-radius:50%;opacity:.75}
+.atlantis-city{position:absolute;left:39px;right:39px;bottom:64px;height:104px;filter:drop-shadow(0 2px 1px rgba(93,59,18,.18))}
+.atlantis-temple{position:absolute;left:50%;bottom:0;width:92px;height:78px;transform:translateX(-50%);border:2px solid rgba(91,57,16,.66);border-top:0;background:linear-gradient(90deg,rgba(255,232,159,.28),rgba(137,91,28,.12));clip-path:polygon(10% 25%,50% 0,90% 25%,88% 31%,80% 31%,80% 100%,20% 100%,20% 31%,12% 31%)}
+.atlantis-temple::before{content:"";position:absolute;left:19px;right:19px;top:24px;height:4px;border-top:2px solid rgba(91,57,16,.72);border-bottom:1px solid rgba(91,57,16,.55)}
+.atlantis-temple i{position:absolute;bottom:4px;width:5px;height:43px;border-left:2px solid rgba(91,57,16,.58);border-right:1px solid rgba(255,241,190,.36)}
+.atlantis-temple i:nth-child(1){left:23px}.atlantis-temple i:nth-child(2){left:34px}.atlantis-temple i:nth-child(3){left:45px}.atlantis-temple i:nth-child(4){left:56px}.atlantis-temple i:nth-child(5){left:67px}
+.atlantis-tower{position:absolute;bottom:0;width:27px;border:2px solid rgba(91,57,16,.58);background:rgba(255,232,159,.20);clip-path:polygon(18% 20%,50% 0,82% 20%,82% 100%,18% 100%)}
+.tower-left{left:0;height:58px}.tower-mid-left{left:28px;height:72px}.tower-mid-right{right:28px;height:70px}.tower-right{right:0;height:55px}
+.atlantis-steps{position:absolute;left:69px;right:69px;bottom:48px;height:28px;background:repeating-linear-gradient(to bottom,rgba(101,65,19,.58) 0 2px,rgba(244,218,145,.18) 2px 6px);clip-path:polygon(22% 0,78% 0,100% 100%,0 100%)}
+.atlantis-water{position:absolute;left:31px;right:31px;bottom:31px;height:25px;border-radius:0 0 80px 80px;background:repeating-radial-gradient(ellipse at 50% 0,rgba(94,62,21,.40) 0 1px,rgba(255,232,164,.10) 2px 7px);opacity:.75}
+.hero-visual-atlantis .hero-float-card{min-width:174px;padding:16px 18px;border-radius:16px;background:rgba(255,253,247,.96);box-shadow:0 18px 40px rgba(58,47,29,.10)}
+.hero-visual-atlantis .hero-float-card strong{display:block;font-size:15px}.hero-visual-atlantis .hero-float-card small{display:block;margin-top:5px;color:#718078;font-size:10px}
+.hero-visual-atlantis .float-top{right:-8px;top:48px}.hero-visual-atlantis .float-bottom{left:-12px;bottom:40px}
+@media(max-width:640px){.hero-visual-atlantis{min-height:310px}.hero-visual-atlantis::before{width:255px;height:255px}.atlantis-plinth{width:220px;height:52px;top:224px}.atlantis-coin{width:184px;height:184px}.atlantis-sun{top:28px;width:40px;height:40px}.atlantis-city{left:28px;right:28px;bottom:46px;height:76px;transform:scale(.74);transform-origin:center bottom}.atlantis-steps{left:50px;right:50px;bottom:35px;height:20px}.atlantis-water{left:23px;right:23px;bottom:23px;height:18px}}
+
+
+/* ATLANTIS ASSET FIX — ensures the approved fictional Atlantis coin is a real deployable asset. */
+.hero-visual-atlantis .atlantis-coin-image{
+  width:270px;
+  height:270px;
+  padding:0;
+  border:0;
+  overflow:visible;
+  background:transparent;
+  box-shadow:none;
+  transform:translateY(-18px) rotate(-1deg);
+}
+.hero-visual-atlantis .atlantis-coin-image img{
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  border-radius:50%;
+  filter:drop-shadow(0 24px 25px rgba(66,48,20,.20));
+}
+@media(max-width:640px){
+  .hero-visual-atlantis .atlantis-coin-image{
+    width:195px;
+    height:195px;
+  }
+}
