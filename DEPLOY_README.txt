@@ -1,52 +1,41 @@
-COINBIDS EMERGENCY RECOVERY PACK — 2026-08-23
+COINBIDS TARGETED REPAIR — 23 AUG 2026
 
-UPLOAD THE FILES IN THIS FOLDER TO THE REPO USING THESE EXACT NAMES.
+DEPLOY THESE FIVE FILES:
+- index.html
+- public_home.html
+- public.css
+- coinbids-logo.png
+- numisvault_backend.py
 
-CRITICAL RESTORED BEHAVIOR
-- coinbids.eu/ = PUBLIC homepage, always.
-- coinbids.eu/app = authenticated application/login.
-- Public homepage no longer auto-redirects to /app just because localStorage
-  contains a valid Supabase session.
-- Standalone Identify Coin is retired from app and public navigation.
-- /identify-coin redirects to /coin-value.
-- App keeps Dashboard -> Price Research -> Auction Intelligence -> remaining options.
-- Recent Activity remains split into In Collection / Pending / Wishlist.
-- Auction buyer premium remains 9%.
-- Login logo is embedded directly.
-- Google OAuth is wired immediately after Supabase creation, so an unrelated
-  app-startup error cannot leave the visible Google button inert.
-- Existing initializeAuth() and normal startup order are preserved.
-- Latest cron-observability backend remains the base.
+FIXED:
+1. Public mobile header no longer overflows with desktop navigation / giant Sign up.
+2. The exact CoinBids coin+magnifier logo embedded in the working app is restored as a real asset.
+3. The fake giant CB NUMISMATICS hero coin is removed and replaced with the real logo.
+4. Authenticated app header is visually compacted on mobile only; controls/IDs/listeners are preserved.
+5. Price Research now distinguishes:
+   - no MA-Shops candidates at all, from
+   - candidates found but rejected by identity validation.
+   It displays the main rejection reasons instead of the misleading generic message.
+6. Backend validation remains strict. No fuzzy relaxation was introduced.
+7. Existing bounded Price Research and cron-observability backend lineage is preserved.
 
-UPLOAD:
-index.html
-public_home.html
-public.css
-numisvault_backend.py
-coin-value.html
-auction-intelligence.html
-metal-value.html
-404.html
-robots.txt
-sitemap.xml
+IMPORTANT:
+“Greece 10 euros 2021 mechanism” is internally inconsistent: the Greek €10
+Antikythera Mechanism issue is 2022, not 2021. CoinBids must NOT fabricate a price
+for the 2021+mechanism combination. It should explain that candidates were found but
+failed explicit year/type validation.
 
-AFTER RENDER IS LIVE TEST IN THIS ORDER:
-1. Incognito -> https://www.coinbids.eu/
-   Must show PUBLIC homepage.
-2. https://www.coinbids.eu/app
-   Must show login with CoinBids logo.
-3. Click Continue with Google.
-   Must navigate to OAuth, or show a visible error message.
-4. Manually return to https://www.coinbids.eu/
-   Must stay PUBLIC (no forced /app redirect).
-5. In app verify nav and Recent Activity.
-6. Run Price Research from free text; Country must remain resolved output, not a required input.
-7. Open /identify-coin; it should redirect to /coin-value.
-
-VALIDATION DONE:
-- index JavaScript syntax PASS
-- backend Python compile PASS
-- route split PASS
-- Identify removal PASS
-- Recent Activity PASS
-- Auction 9% PASS
+CHECKS:
+{
+  "index_js_syntax": true,
+  "backend_python_compile": true,
+  "exact_app_logo_recovered": true,
+  "fake_CB_NUMISMATICS_removed": true,
+  "public_mobile_overflow_fix": true,
+  "price_rejection_diagnostics_visible": true,
+  "strict_hard_filter_preserved": true,
+  "bounded_query_limit_preserved": true,
+  "bounded_pages_preserved": true,
+  "auction_comparables_fix_preserved": true,
+  "sales_fix_preserved": true
+}

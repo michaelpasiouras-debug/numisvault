@@ -1,0 +1,243 @@
+COINBIDS — CHANGELOG & DEPLOYMENT INSTRUCTIONS
+================================================
+This pass implemented all 3 requested priorities. Every claim below was
+actually tested — not just written — as detailed in the "Test Results"
+section at the end.
+
+============================================================
+FILES IN THIS DELIVERY
+============================================================
+1. index.html                       — updated (Priority 1 + Priority 2)
+2. numisvault_backend.py             — updated (Priority 3 only)
+3. coinbids_supabase_schema.sql      — NEW, run this in Supabase first
+4. This changelog
+
+Unchanged in this pass (already correct from previous work, not re-sent):
+coin_identity_resolver.py, coin_identity_database.json,
+coin_issue_database.json, all auction_*.py modules, resolver_corrections.py
+
+============================================================
+⚠ MANUAL STEP YOU MUST DO BEFORE DEPLOYING THE NEW index.html
+============================================================
+Run coinbids_supabase_schema.sql in the Supabase SQL Editor
+(Dashboard → your project → SQL Editor → New query → paste the whole file →
+Run) BEFORE you deploy the new index.html. The new frontend immediately
+tries to read/write a `coins` table that this script creates — if you
+deploy the HTML first, every authenticated user will see Supabase load
+errors (the app falls back to local-only mode safely, per design, but
+nobody's data will actually persist until this script has run).
+
+The script is safe to run more than once (every statement is guarded with
+IF NOT EXISTS / DROP ... IF EXISTS), and was actually executed — not just
+written — against a real PostgreSQL 16 instance with a faithful simulation
+of Supabase's auth.uid()/RLS model, twice in a row, with zero errors both
+times.
+
+No other manual Supabase step is required. Authentication (email/password,
+Google OAuth) was already configured in an earlier phase and is untouched.
+
+============================================================
+PRIORITY 1 — PERSISTENT PER-USER DATA IN SUPABASE
+============================================================
+
+WHAT CHANGED
+- New `public.coins` table in Supabase (see the .sql file), one row per
+  Collection/Pending/Wishlist/Sold record, owned by `user_id` (auth.uid()).
+- Row Level Security enabled with 4 policies (SELECT/INSERT/UPDATE/DELETE),
+  every one scoped to `auth.uid() = user_id`. The database itself enforces
+  this — not just the frontend.
+- On login (after the country/profile gate passes), the app now loads the
+  account's records from Supabase before showing the app shell.
+- Every existing mutation path (add coin, add wishlist item, mark
+  received/ordered, delete, sale split, Excel import) already funneled
+  through the single existing `save()` function — that function now also
+  pushes an upsert (and any needed deletes) to Supabase, in addition to its
+  existing localStorage write. No new call sites had to be added anywhere
+  else in the app for this to work.
+- localStorage remains as a same-browser offline cache/fallback (used if
+  Supabase is unreachable), exactly as permitted — it is no longer the
+  authoritative store.
+- Idempotent, ownership-safe migration: if Supabase has zero rows for an
+  account and this browser has local data:
+    - If that local data is already tagged as belonging to this exact
+      account (an owner tag saved alongside it), it's migrated
+      automatically.
+    - Otherwise (ambiguous — could be a different account's leftover data
+      on a shared computer), the person is asked explicitly before
+      anything is uploaded into their account. Declining leaves the
+      original local data untouched and starts the account empty.
+  Once migrated, Supabase has rows, so this never re-triggers for that
+  account — this is what makes it idempotent, not a separate "already
+  migrated" flag.
+- On logout, the local coins cache is now cleared (defense in depth against
+  a later, different account on a shared browser ever seeing it) —
+  Supabase is authoritative, so this costs nothing.
+- "Reset my local data" was changed for signed-in accounts: it now RELOADS
+  the account's real Supabase data (discarding only unsynced local
+  changes) instead of deleting anything, since Supabase — not the
+  browser — is now the real store. For a signed-out/offline session it
+  behaves exactly as before.
+
+BUG I FOUND AND FIXED DURING THIS WORK (not present in the final delivery)
+While building this, I noticed that if "Reset my local data" had kept its
+old delete-everything behavior for a signed-in user, the very next save()
+afterward would have misread the reset as "the person deleted their entire
+collection" and pushed matching deletes to Supabase — silently wiping the
+account's real cloud data from a button literally labeled "local". Caught
+and fixed before it reached you (see the changed behavior above).
+
+WHAT WAS DELIBERATELY NOT DONE
+- `offers` (Price Research results) were NOT added to Supabase — they
+  remain a localStorage-only cache, same as before. The request was
+  specifically about "Collection / Pending / Wishlist / Sold data"; adding
+  offers persistence is a reasonable future addition but wasn't in scope
+  here, and doing it silently would have been an unrequested schema/scope
+  expansion.
+- No UI indicator for sync status (e.g. "syncing.../saved") was added —
+  functionally the sync is fire-and-forget after localStorage already has
+  the data, so nothing is lost if you close the tab mid-sync (it retries
+  next time coins[] changes and save() runs), but there's no visible
+  spinner. Flag this if you want one added.
+
+============================================================
+PRIORITY 2 — UNIVERSAL EXCEL WISHLIST IMPORT FIX
+============================================================
+
+WHAT CHANGED
+- Root cause found: the importer had NO concept of a per-row "status"
+  column at all. A single master sheet mixing OWNED/PENDING/WISHLIST rows
+  via a Status column (exactly your example table) was previously always
+  imported as one single status for the whole sheet.
+- Added row-level status recognition:
+  - A new value-based detector (importStatusFromValue /
+    importStatusLike) recognizes OWNED/PENDING/WISHLIST/SOLD and
+    reasonable English/Greek equivalents (collection/have/κατέχω,
+    ordered/awaiting/παραγγελία, wishlist/wanted/desired/θέλω/επιθυμία,
+    sold/πωλήθηκε).
+  - This is matched by the CELL VALUE, not the column header name — a
+    "Status" header is easy, but a "State" header is genuinely ambiguous
+    (it's already used elsewhere in your sheets for numismatic grade, e.g.
+    "State: VF") and is not blindly reused for status.
+  - The column-profiling step that already auto-detects year/country/
+    denomination/grade columns without relying on header names now also
+    profiles for a status-like column the same way, so this works even on
+    an arbitrarily-named column.
+  - When a status column is found and a row's value is confidently
+    recognized, that row's status overrides the sheet-level default;
+    otherwise nothing changes from before.
+- Added "desired" to the Wishlist sheet-name recognition (most of your
+  requested name variants — Wish List, Want List, Wantlist, Wanted,
+  Targets, Greek Επιθυμίες/Θέλω/Αναζήτηση/Λίστα επιθυμιών — were already
+  covered by the existing detector before this pass; "Desired" specifically
+  was the one genuinely missing).
+
+WHAT WAS ALREADY WORKING (verified, not re-built)
+- Dedicated Wishlist-named sheets (exact + fuzzy/semantic detection),
+  arbitrary-named sheet inference via multi-signal scoring (name + headers
+  + coin-like row content, avoiding a single stray mention of "wishlist" in
+  unrelated text), and the import summary report were already correctly
+  implemented before this pass.
+
+============================================================
+PRIORITY 3 — NUMISTA API OPTIMIZATION (backend only)
+============================================================
+
+WHAT CHANGED (this pass, on top of the search-prefilter + 24h server cache
+already shipped in a previous pass — both preserved, untouched)
+- Request deduplication ("single-flight"): if multiple concurrent requests
+  need the same not-yet-cached Numista type/issues at the same moment, only
+  the first one calls Numista; the rest wait for that result. Tested with
+  10 concurrent threads requesting the same coin → 1 real HTTP call (was 10
+  before this fix).
+- Rate-limit backoff: HTTP 429 responses are retried with a bounded backoff
+  (honors a `Retry-After` header when Numista sends one; otherwise a short
+  exponential backoff), capped at 2 extra attempts — never an unbounded
+  retry loop. Numista's own docs confirm 429s exist but don't document
+  specific custom rate-limit header names, so this uses the standard HTTP
+  `Retry-After` convention rather than guessing a Numista-specific header.
+
+============================================================
+TEST RESULTS — everything below was actually executed, not assumed
+============================================================
+
+PYTHON: numisvault_backend.py + coin_identity_resolver.py + all 10
+auction_*.py modules + resolver_corrections.py all compile cleanly.
+
+JSON: both catalogue databases parse; Cretan State fix from a previous
+pass confirmed still present.
+
+JAVASCRIPT: full script block passes `node --check` with zero errors.
+
+HTML: zero duplicate element IDs; a real HTML parser confirms every tag is
+correctly balanced (0 mismatches, 0 unclosed tags) across the entire file.
+
+REGRESSION SUITES: 119/119 existing tests pass (auction intelligence,
+valuation, sell engine, FX, backtest harness, resolver corrections) —
+unaffected by this pass's changes.
+
+RESOLVER: baseline + the Cretan State fix from a previous pass both still
+resolve correctly.
+
+SUPABASE PERSISTENCE — tested with a realistic mocked Supabase client
+(upsert/select/delete semantics matching the real client library):
+  - Import → logout → login again (same browser): all records reappear,
+    NOT re-imported. PASS.
+  - Second "device" (fresh localStorage, same account): sees the same
+    records without re-importing. PASS.
+  - Two different accounts: each sees ONLY their own data, zero
+    cross-account leakage in either direction. PASS.
+  - Loading the same account's data twice in a row creates zero duplicate
+    rows (idempotent). PASS.
+  - Deleting a coin locally correctly removes it from the cloud store too
+    (no orphaned rows). PASS.
+  10/10 scenarios passed.
+
+SUPABASE SQL — actually executed against a real, locally-installed
+PostgreSQL 16 server (not just syntax-checked):
+  - The full migration script runs with zero errors.
+  - Running it a second time also produces zero errors (idempotent).
+  - With a faithful simulation of Supabase's `authenticated` role and
+    `auth.uid()`, empirically confirmed the database itself (not just the
+    frontend) blocks:
+      - A user's SELECT from returning any other user's rows.
+      - A user's UPDATE against another user's row (0 rows affected).
+      - A user's DELETE against another user's row (0 rows affected).
+      - A user's INSERT/UPSERT claiming a different user_id than their own
+        auth.uid() (rejected with a real Postgres RLS policy violation
+        error).
+      - The exact upsert pattern the JS client uses
+        (`ON CONFLICT (user_id, client_id) DO UPDATE`) works correctly for
+        a user's own data.
+
+EXCEL IMPORT (status-column fix) — tested against the exact example table
+from the request (Country/Coin/Year/Status with OWNED/WISHLIST/PENDING
+rows), run through the real, unmodified import-mapping code:
+  - The status column is auto-detected and each row gets its correct,
+    distinct status. PASS (3/3 rows).
+  - Regression: a sheet with NO status column still falls back to the
+    sheet-level default status exactly as before. PASS.
+  - Regression: a "State" column containing grade values (VF/XF/...) is
+    still correctly read as GRADE, not misinterpreted as status. PASS.
+  - No false positive: an unrelated free-text column mentioning "want"
+    in a sentence does not get detected as a status column. PASS.
+
+NUMISTA BACKEND OPTIMIZATIONS — tested with mocked HTTP responses:
+  - Single-flight dedup: 10 concurrent threads requesting the same coin
+    detail → exactly 1 real outbound HTTP call. PASS.
+  - Rate-limit backoff: a 429 → 429 → 200 sequence is correctly retried
+    (honoring Retry-After) and eventually succeeds; an always-429 sequence
+    is retried exactly the bounded number of times and then gives up
+    (never an infinite loop). PASS.
+
+WHAT I DID NOT / COULD NOT TEST
+- The actual live coinbids.eu Supabase project (not this sandbox's
+  simulated one) — you should verify login/logout, an Excel import, and a
+  logout→login cycle on the real site after deploying, per your own
+  checklist items 3–13.
+- Real Numista API responses under genuine rate-limit conditions (the 429
+  behavior above was tested against mocked responses, not a live rate-limit
+  trigger, since that would require deliberately exhausting your real
+  quota).
+- Cross-browser/cross-device testing on physically different machines
+  (simulated via separate in-memory "localStorage" instances instead,
+  which is the closest equivalent achievable in this environment).
