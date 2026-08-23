@@ -661,30 +661,3 @@ a:focus,button:focus{outline:3px solid var(--gold-2);outline-offset:3px}
 .hero-visual-atlantis .hero-float-card strong{display:block;font-size:15px}.hero-visual-atlantis .hero-float-card small{display:block;margin-top:5px;color:#718078;font-size:10px}
 .hero-visual-atlantis .float-top{right:-8px;top:48px}.hero-visual-atlantis .float-bottom{left:-12px;bottom:40px}
 @media(max-width:640px){.hero-visual-atlantis{min-height:310px}.hero-visual-atlantis::before{width:255px;height:255px}.atlantis-plinth{width:220px;height:52px;top:224px}.atlantis-coin{width:184px;height:184px}.atlantis-sun{top:28px;width:40px;height:40px}.atlantis-city{left:28px;right:28px;bottom:46px;height:76px;transform:scale(.74);transform-origin:center bottom}.atlantis-steps{left:50px;right:50px;bottom:35px;height:20px}.atlantis-water{left:23px;right:23px;bottom:23px;height:18px}}
-
-
-/* ATLANTIS ASSET FIX — ensures the approved fictional Atlantis coin is a real deployable asset. */
-.hero-visual-atlantis .atlantis-coin-image{
-  width:270px;
-  height:270px;
-  padding:0;
-  border:0;
-  overflow:visible;
-  background:transparent;
-  box-shadow:none;
-  transform:translateY(-18px) rotate(-1deg);
-}
-.hero-visual-atlantis .atlantis-coin-image img{
-  display:block;
-  width:100%;
-  height:100%;
-  object-fit:contain;
-  border-radius:50%;
-  filter:drop-shadow(0 24px 25px rgba(66,48,20,.20));
-}
-@media(max-width:640px){
-  .hero-visual-atlantis .atlantis-coin-image{
-    width:195px;
-    height:195px;
-  }
-}
