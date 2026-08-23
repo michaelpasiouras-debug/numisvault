@@ -149,7 +149,7 @@ def run():
     # ------------------------------------------------------------------
     # 5. coin_issue_database.json sanity — new record present, well-formed.
     # ------------------------------------------------------------------
-    print("\n[5/5] coin_issue_database.json — new issue record present...")
+    print("\n[5/6] coin_issue_database.json — new issue record present...")
     try:
         issues = (backend.get_resolver().issue_db or {}).get("issues") or []
         match = next((i for i in issues if i.get("country_code") == "GR"
@@ -161,6 +161,28 @@ def run():
     except Exception as e:
         check("coin_issue_database.json sanity", False, f"-> THREW {type(e).__name__}: {e}")
         print(f"  FAIL  -> THREW {type(e).__name__}: {e}")
+
+    # ------------------------------------------------------------------
+    # 6. RAW-INTENT COUNTRY REGRESSION — "5 drachma 1901" (the Cretan
+    #    State case). This is a SEPARATE historical protection (the
+    #    original V4 Price Research fix) that was found MISSING from
+    #    production during this session (root cause of a live 2026-08-23
+    #    incident: valid=0/100 for this exact query) and restored here as
+    #    an isolated fix alongside the theme-matching work. Included in
+    #    THIS suite (not a new file) because it exercises the exact same
+    #    passes_hard_filter() entry point.
+    # ------------------------------------------------------------------
+    print("\n[6/6] Raw-intent country regression (Kreta / Cretan State 1901)...")
+    kreta_coin = {"country": "Greece", "denom": "5 drachma", "year": "1901", "theme": "", "variant": ""}
+    kreta_title = "Kreta / Crete 5 Drachmai 1901 F-VF"
+    check("no explicit country in raw query -> Kreta listing is NOT hard-rejected",
+          backend.passes_hard_filter(kreta_title, {"coin": kreta_coin, "raw_query": "5 drachma 1901"}) is True)
+    check("explicit 'Greece' in raw query -> Kreta listing IS correctly rejected",
+          backend.passes_hard_filter(kreta_title, {"coin": kreta_coin, "raw_query": "Greece 5 drachma 1901"}) is False)
+    check("a normal Greece-titled listing still passes regardless",
+          backend.passes_hard_filter("Greece 5 Drachmai 1901 George I Silver Coin",
+                                      {"coin": kreta_coin, "raw_query": "5 drachma 1901"}) is True)
+    print("  OK  (see FAILURES below if any)")
 
     # --- summary ---
     total = PASS_COUNT + len(FAILURES)

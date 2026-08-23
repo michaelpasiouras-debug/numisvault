@@ -1002,6 +1002,30 @@ def _theme_issue_gate(coin, title):
     return theme_word_matches_title(theme_raw,title) or any(
         norm(al) in norm(title) for al in (matched.get("aliases") or []) if al)
 
+def _country_explicit_in_raw(country, raw_query):
+    """True only if the raw text the USER actually typed literally names
+    this country (via any of its known aliases) — as opposed to a country
+    the identity resolver merely INFERRED and auto-filled into the
+    displayed "Country" field. Restores the "raw intent is the search
+    contract" principle: denomination and year the user actually typed
+    remain hard constraints, but a resolver-inferred country must not
+    silently narrow/reject otherwise-correct results.
+
+    Concrete regression this fixes: a user searching "5 drachma 1901"
+    (no country mentioned at all) has the Country field auto-filled with
+    "Greece" by the resolver — correct and helpful to show, but it must
+    NOT then hard-reject a genuine "Kreta / Crete 5 Drachmai 1901"
+    listing (the Cretan State, a distinct historical issuing authority)
+    just because its title doesn't literally say "Greece". If the user
+    instead explicitly typed "Greece 5 drachma 1901", country stays a
+    real, enforced constraint as normal."""
+    if not country or not raw_query:
+        return False
+    target=canonical_country(country)
+    aliases=COUNTRY_CANON.get(target,[target])
+    rq=norm(raw_query)
+    return any(norm(al) in rq for al in aliases)
+
 def passes_hard_filter(title, payload):
     coin=payload.get("coin") or {}
     a=norm(title)
@@ -1014,7 +1038,8 @@ def passes_hard_filter(title, payload):
     denom=str(coin.get("denom") or coin.get("denomination") or "").strip()
     if denom and not denomination_matches(denom,title):return False
     country=str(coin.get("country") or "").strip()
-    if country and not country_in_title(country,a):return False
+    raw_query=str(payload.get("raw_query") or coin.get("raw") or "")
+    if country and _country_explicit_in_raw(country,raw_query) and not country_in_title(country,a):return False
     variant=str(coin.get("variant") or "").strip()
     if variant and not variant_matches(variant,title):return False
     grade=str(coin.get("grade") or "").strip()
