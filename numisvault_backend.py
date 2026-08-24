@@ -1601,12 +1601,14 @@ def enrich_offer_from_item_page(offer, ship_to_country="Greece", use_geo_proxy=F
 
 
 def extract_mashops_physical_specs_from_html(html_text, source_url=None):
-    """Best-effort extraction of physical coin specs from an MA-Shops ITEM page.
+    """Extract explicit physical specs from an identity-validated MA-Shops item page.
 
-    This is deliberately conservative: it returns only explicit weight and
-    composition/fineness text found on the page. It never infers fineness from
-    a metal name alone. The caller must validate coin identity BEFORE trusting
-    these specs.
+    Conservative by design: only values printed on the page are returned.
+    Handles current MA-Shops labels such as:
+        Material: Silver
+        Weight: 25.00 g
+        Fineness: 900 ‰ (22.50 g fine)
+        Diameter: 37.00 mm
     """
     if not html_text:
         return None
@@ -1615,17 +1617,29 @@ def extract_mashops_physical_specs_from_html(html_text, source_url=None):
     if not text:
         return None
 
-    weight=None
-    weight_patterns=[
+    def first_number(patterns, lo=None, hi=None):
+        for pat in patterns:
+            m=re.search(pat,text,re.I)
+            if not m:
+                continue
+            v=num(m.group(1))
+            if v is None:
+                continue
+            if lo is not None and v < lo:
+                continue
+            if hi is not None and v > hi:
+                continue
+            return v
+        return None
+
+    weight=first_number([
         r"(?:weight|gewicht|poids|peso)\s*[:\-]?\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:g|gram|grams|gramm)\b",
         r"([0-9]+(?:[.,][0-9]+)?)\s*(?:g|gram|grams|gramm)\s*(?:weight|gewicht|poids|peso)\b",
-    ]
-    for pat in weight_patterns:
-        m=re.search(pat,text,re.I)
-        if m:
-            weight=num(m.group(1));break
-    if weight is not None and not (0.1 <= weight <= 1000):
-        weight=None
+    ],0.1,1000)
+
+    diameter=first_number([
+        r"(?:diameter|durchmesser|diam[eè]tre|diametro|di[aá]metro)\s*[:\-]?\s*([0-9]+(?:[.,][0-9]+)?)\s*mm\b",
+    ],1,200)
 
     metal_aliases={
         "silver":"Silver","silber":"Silver","argent":"Silver","argento":"Silver","plata":"Silver",
@@ -1633,32 +1647,66 @@ def extract_mashops_physical_specs_from_html(html_text, source_url=None):
         "platinum":"Platinum","platin":"Platinum","platine":"Platinum","platino":"Platinum",
         "palladium":"Palladium",
     }
+
     metal=None
-    for raw,canon in metal_aliases.items():
-        if re.search(rf"\b{re.escape(raw)}\b",text,re.I):
-            metal=canon;break
+    mm=re.search(r"(?:material|metal|metall|mati[eè]re|materiale)\s*[:\-]?\s*([A-Za-zÀ-ÿ]+)",text,re.I)
+    if mm:
+        metal=metal_aliases.get(norm(mm.group(1)))
+    if not metal:
+        for raw,canon in metal_aliases.items():
+            if re.search(rf"\b{re.escape(raw)}\b",text,re.I):
+                metal=canon
+                break
 
     fineness=None
-    fineness_patterns=[
-        r"(?:fineness|feinheit|titre|ley)\s*[:\-]?\s*(?:0[.,])?([0-9]{3})\s*(?:/\s*1000|‰)?",
-        r"\b(?:silver|silber|argent|argento|plata|gold|or|oro|platinum|platin|platine|platino|palladium)\b[^\n]{0,45}?\(?\s*[.]?([0-9]{3})\s*\)?",
-        r"\b([0-9]{3})\s*(?:/\s*1000|‰)\b",
-    ]
-    for pat in fineness_patterns:
+    for pat in [
+        r"(?:fineness|feinheit|titre|ley)\s*[:\-]?\s*(?:0[.,])?([0-9]{3,4})\s*(?:/\s*1000|‰)?",
+        r"\b([0-9]{3,4})\s*(?:/\s*1000|‰)\b",
+    ]:
         m=re.search(pat,text,re.I)
-        if m:
-            try:
-                v=int(m.group(1))
-                if 100 <= v <= 999: fineness=v;break
-            except Exception: pass
+        if not m:
+            continue
+        try:
+            v=float(m.group(1))
+            if 100 <= v <= 1000:
+                fineness=v
+                break
+        except Exception:
+            pass
 
-    if not weight and not (metal and fineness):
+    printed_fine_g=first_number([
+        r"\(\s*([0-9]+(?:[.,][0-9]+)?)\s*g\s*(?:fine|fein)\s*\)",
+    ],0.01,1000)
+
+    if weight is None and diameter is None and metal is None and fineness is None:
         return None
-    composition=(f"{metal} (.{fineness:03d})" if metal and fineness else metal)
-    fine_g=(weight*fineness/1000.0) if weight is not None and fineness is not None else None
-    return {"composition":composition,"primary_metal":metal,"fineness_per_mille":fineness,
-            "weight_g":weight,"fine_metal_g":fine_g,"spec_source":"MA-Shops validated item page",
-            "data_provider":"MA-Shops","source_url":source_url}
+
+    if fineness is not None and float(fineness).is_integer():
+        fineness=int(fineness)
+
+    composition=None
+    if metal and fineness is not None:
+        if isinstance(fineness,int):
+            composition=f"{metal} (.{fineness:03d})"
+        else:
+            composition=f"{metal} ({fineness/1000:.4f})"
+    elif metal:
+        composition=metal
+
+    fine_g=(weight*float(fineness)/1000.0) if weight is not None and fineness is not None else printed_fine_g
+
+    return {
+        "composition":composition,
+        "primary_metal":metal,
+        "fineness_per_mille":fineness,
+        "weight_g":weight,
+        "diameter_mm":diameter,
+        "fine_metal_g":fine_g,
+        "printed_fine_metal_g":printed_fine_g,
+        "spec_source":"MA-Shops validated item page",
+        "data_provider":"MA-Shops",
+        "source_url":source_url,
+    }
 
 
 _MA_SPEC_CACHE = {}
@@ -1667,54 +1715,114 @@ def _coin_identity_key(coin):
     return "|".join(str(coin.get(k) or "").strip().lower() for k in ("countryEN","country","denom","year","variant"))
 
 def cache_mashops_spec(coin, spec):
-    if spec and spec.get("weight_g"):
+    if spec and any(spec.get(k) is not None for k in ("weight_g","fineness_per_mille","primary_metal","diameter_mm")):
         _MA_SPEC_CACHE[_coin_identity_key(coin)] = dict(spec)
 
 def cached_mashops_spec(coin):
     return _MA_SPEC_CACHE.get(_coin_identity_key(coin))
 
 def mashops_spec_fallback(coin, raw_query=""):
-    """Resolve missing physical specs from a validated MA-Shops listing.
-
-    Uses the same hard identity filters as Price Research. Only the cheapest-first
-    search page is requested, then at most the first few matching item pages are
-    inspected until explicit physical specs are found.
-    """
+    """Resolve missing physical specs from identity-validated MA-Shops listings."""
     cached=cached_mashops_spec(coin)
     if cached:
         return cached
+
     country=str(coin.get("countryEN") or coin.get("country") or "").strip()
-    denom=str(coin.get("denom") or "").strip()
+    denom=str(coin.get("denom") or coin.get("denomination") or "").strip()
     year=str(coin.get("year") or "").strip()
     variant=str(coin.get("variant") or "").strip()
-    query=(raw_query or " ".join(x for x in [country,denom,year,variant] if x)).strip()
-    if not query:return None
-    payload={"coin":{"country":country,"countryEN":country,"denom":denom,"year":year,"variant":variant},
-             "raw_query":raw_query or query,"asset_type":"COIN"}
-    offers,_,err=fetch_search(query,payload)
-    if err and not offers:return None
-    valid=[]
-    for o in offers:
-        mt=o.get("_match_text") or o.get("title","")
-        if classify_asset(mt)[0]=="BANKNOTE":continue
-        if product_scope(mt)!="SINGLE_COIN":continue
-        if not passes_hard_filter(mt,payload):continue
-        valid.append(o)
-    valid.sort(key=lambda o:(o.get("price") is None,o.get("price") or float("inf")))
-    for o in valid[:4]:
+    base_query=(raw_query or " ".join(x for x in [country,denom,year,variant] if x)).strip()
+    if not base_query:
+        return None
+
+    payload={
+        "coin":{"country":country,"countryEN":country,"denom":denom,"year":year,"variant":variant},
+        "raw_query":raw_query or base_query,
+        "asset_type":"COIN",
+    }
+
+    queries=make_queries(payload)[:3] or [base_query]
+    valid_by_url={}
+
+    for query in queries:
+        offers,_,err=fetch_search(query,payload)
+        if err and not offers:
+            continue
+        for o in offers:
+            mt=o.get("_match_text") or o.get("title","")
+            asset=classify_asset(mt)[0]
+            if asset in ("BANKNOTE","OTHER"):
+                continue
+            if product_scope(mt)!="SINGLE_COIN":
+                continue
+            if not passes_hard_filter(mt,payload):
+                continue
+            url=o.get("url")
+            if url and url not in valid_by_url:
+                valid_by_url[url]=o
+
+    valid=sorted(
+        valid_by_url.values(),
+        key=lambda o:(o.get("price") is None,
+                      o.get("price") if o.get("price") is not None else float("inf"),
+                      -o.get("_score",0))
+    )[:6]
+
+    if not valid:
+        print(f"[MA-Shops specs] no validated listing candidates for {base_query!r}",flush=True)
+        return None
+
+    def fetch_one(o):
+        url=o.get("url")
+        if not url:
+            return None
         try:
-            r=SESSION.get(o.get("url"),timeout=12,allow_redirects=True)
-            if not r.ok:continue
+            r=SESSION.get(url,timeout=12,allow_redirects=True)
+            if not r.ok:
+                return None
             specs=extract_mashops_physical_specs_from_html(r.text,r.url)
-            if specs:
-                specs.update({"id":None,"title":o.get("title") or query,"issuer":"","diameter_mm":None,
-                              "obverse_image":None,"reverse_image":None,"url":r.url,
-                              "match_class":"MA_SHOPS_VALIDATED_SPEC","confidence":0.82})
-                cache_mashops_spec(coin,specs)
-                return specs
+            if not specs:
+                return None
+            specs.update({
+                "id":None,
+                "title":o.get("title") or base_query,
+                "issuer":"",
+                "obverse_image":None,
+                "reverse_image":None,
+                "url":r.url,
+                "match_class":"MA_SHOPS_VALIDATED_SPEC",
+                "confidence":0.88,
+                "spec_source_title":o.get("title") or "",
+                "spec_source_dealer":o.get("dealer") or "",
+            })
+            return specs
         except Exception as e:
             print(f"[MA-Shops specs] item fetch failed: {type(e).__name__}: {e}",flush=True)
+            return None
+
+    with ThreadPoolExecutor(max_workers=min(3,len(valid))) as pool:
+        futures=[pool.submit(fetch_one,o) for o in valid]
+        for fut in as_completed(futures):
+            try:
+                specs=fut.result()
+            except Exception:
+                specs=None
+            if specs:
+                cache_mashops_spec(coin,specs)
+                for other in futures:
+                    if other is not fut:
+                        other.cancel()
+                print(
+                    f"[MA-Shops specs] resolved {base_query!r}: "
+                    f"composition={specs.get('composition')} weight_g={specs.get('weight_g')} "
+                    f"fineness={specs.get('fineness_per_mille')} diameter_mm={specs.get('diameter_mm')}",
+                    flush=True
+                )
+                return specs
+
+    print(f"[MA-Shops specs] validated listings found but no explicit physical specs for {base_query!r}",flush=True)
     return None
+
 
 def fetch_search(query, payload):
     """Fetch the explicit MA-Shops cheapest-first result page.
@@ -2284,7 +2392,7 @@ def coin_lookup():
     issue_match=None
     if wanted_year and issues:
         for issue in issues:
-            if re.search(rf"(?<!\\d){re.escape(wanted_year)}(?!\\d)",flatten_text(issue)):
+            if re.search(rf"(?<!\d){re.escape(wanted_year)}(?!\d)",flatten_text(issue)):
                 issue_match=issue;break
     composition=numista_pick(detail,"composition.text","composition")
     if issue_match: composition=numista_pick(issue_match,"composition.text","composition") or composition
@@ -3153,8 +3261,8 @@ def coin_search():
     # Render logs 2026-08-23). Initializing to 0 is the safe minimal fix:
     # it reports "0 direct/geo detail-page checks" (accurate, since none
     # currently happen in this function) instead of crashing the endpoint.
-    direct_checked=0
-    geo_checked=0
+    direct_checked=sum(1 for o in valid if o.get("detail_page_checked"))
+    geo_checked=sum(1 for o in valid if o.get("shipping_geo_verified"))
 
     diagnostics={
         "raw_candidates_found":raw_count,
