@@ -1,0 +1,4 @@
+dealer_slug,dealer_name,destination,tier_label,price_tier_min,price_tier_max,weight_tier_min_g,weight_tier_max_g,cost,currency,free_shipping,source_url,scraped_at
+hausderbriefmarke,hausderbriefmarke,Germany,tier_1,,,,,6.19,EUR,False,https://www.ma-shops.com/hausderbriefmarke/versandkosten.php?lang=en&curr=EUR,2026-08-20T17:58:13.156265+00:00
+hausderbriefmarke,hausderbriefmarke,European Union,tier_1,,,,,16.99,EUR,False,https://www.ma-shops.com/hausderbriefmarke/versandkosten.php?lang=en&curr=EUR,2026-08-20T17:58:13.156265+00:00
+hausderbriefmarke,hausderbriefmarke,World,tier_1,,,,,39.99,EUR,False,https://www.ma-shops.com/hausderbriefmarke/versandkosten.php?lang=en&curr=EUR,2026-08-20T17:58:13.156265+00:00
