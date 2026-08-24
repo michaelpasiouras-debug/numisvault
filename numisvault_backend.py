@@ -419,7 +419,7 @@ COUNTRY_SYNONYMS = {
 
 COUNTRY_CANON = {
     "croatia":["croatia","croatian","hrvatska","kroatien","croatie","croazia","croacia","κροατια"],
-    "greece":["greece","greek","hellas","ellada","griechenland","grèce","grece","ελλαδα"],
+    "greece":["greece","greek","hellas","ellada","griechenland","griekenland","grèce","grece","grecia","ελλαδα"],
     "germany":["germany","deutschland","allemagne","γερμανια"],
     "france":["france","francais","française","frankreich","γαλλια"],
     "italy":["italy","italia","italien","ιταλια"],
