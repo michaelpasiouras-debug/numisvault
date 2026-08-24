@@ -1,0 +1,41 @@
+name: CoinBids Audit
+
+on:
+  push:
+    paths:
+      - '**.py'
+      - '**.json'
+      - '.github/workflows/coinbids-audit.yml'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  offline-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Existing regression suites
+        run: |
+          set -e
+          [ ! -f test_resolver_regression.py ] || python test_resolver_regression.py
+          [ ! -f test_search_filter_regression.py ] || python test_search_filter_regression.py
+          [ ! -f test_theme_issue_matching.py ] || python test_theme_issue_matching.py
+      - name: Full offline audit
+        run: python coinbids_audit.py --mode offline
+      - name: Upload audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coinbids-audit-report
+          path: |
+            coinbids_audit_report.csv
+            coinbids_audit_report.json
+            coinbids_audit_summary.txt
