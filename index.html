@@ -2017,7 +2017,15 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    // Preserve the user's issue/theme wording as additional strict-filter
    // evidence when the resolver's variants are sparse.
    if(!auctionSearchCoin.themeHint && parsed.variant) auctionSearchCoin.themeHint=parsed.variant;
-   const res=await fetch(ep,{method:'POST',signal:auctionCtrl.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({coin:auctionSearchCoin,raw_query:q,variants:[q,...(rr.searchVariants||[])],ship_to:getShipToCountry(),currency:$('aCurrency').value,include_shipping:true,asset_type:'COIN',limit:2,scan_limit:30,sample_limit:10})});
+   // Use the SAME search-variant expansion as Price Research. Previously the
+   // auction path sent only the raw query + resolver variants, while Price
+   // Research also sent searchVariants(coin). That made Auction Intelligence
+   // miss cheaper exact listings (e.g. the 161.75 EUR Greece 10 EUR 2022
+   // mechanism result) and incorrectly treat a 210 EUR listing as the best
+   // dealer alternative.
+   const auctionVariants=[q,...(rr.searchVariants||[]),...searchVariants(auctionSearchCoin)]
+     .filter((x,i,a)=>x&&a.indexOf(x)===i);
+   const res=await fetch(ep,{method:'POST',signal:auctionCtrl.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({coin:auctionSearchCoin,raw_query:q,variants:auctionVariants,ship_to:getShipToCountry(),currency:$('aCurrency').value,include_shipping:true,asset_type:'COIN',limit:2,sample_limit:10})});
    const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);
    // IMPORTANT: the two cheapest listings (data.offers) are purchase anchors,
    // NOT the valuation sample. Fair Value must not be computed from only the
