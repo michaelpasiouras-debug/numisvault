@@ -1774,7 +1774,9 @@
       "variant": "1st series",
       "denomination_label": "5 Deutsche Mark",
       "fineness": 625,
-      "fine_metal_g": 7.0
+      "fine_metal_g": 7.0,
+      "fineness_per_mille": 625,
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -5439,7 +5441,9 @@
       "denomination_label": "1 krona",
       "variant": "40% silver era",
       "fineness": 400,
-      "fine_metal_g": 2.8
+      "fine_metal_g": 2.8,
+      "fineness_per_mille": 400,
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -5460,7 +5464,9 @@
       "denomination_label": "2 kronor",
       "variant": "Gustaf VI Adolf silver",
       "fineness": 400,
-      "fine_metal_g": 5.6
+      "fine_metal_g": 5.6,
+      "fineness_per_mille": 400,
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -6207,15 +6213,15 @@
       "year_from": 1998,
       "year_to": null,
       "composition": "Nickel-plated steel",
-      "weight_g": null,
-      "diameter_mm": null,
+      "weight_g": 2.7,
+      "diameter_mm": 18.0,
       "source": "Central Bank of Bosnia and Herzegovina — KM Coins",
-      "source_url": "https://www.cbbh.ba/Content/Read/1072",
-      "source_priority": "official_composition_only",
+      "source_url": "https://cbbh.ba/content/DownloadAttachment/?id=68732829-d3b5-4949-91b4-22140860e813&langTag=bs",
+      "source_priority": "official",
       "verified": true,
       "confidence": 1.0,
       "denomination_label": "5 feninga",
-      "metal_value_ready": false
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -6226,15 +6232,15 @@
       "year_from": 1998,
       "year_to": null,
       "composition": "Copper-plated steel",
-      "weight_g": null,
-      "diameter_mm": null,
+      "weight_g": 3.9,
+      "diameter_mm": 20.0,
       "source": "Central Bank of Bosnia and Herzegovina — KM Coins",
-      "source_url": "https://www.cbbh.ba/Content/Read/1072",
-      "source_priority": "official_composition_only",
+      "source_url": "https://www.cbbh.ba/content/DownloadAttachment/?id=e009346a-213a-47f4-b78b-e82393907fc6&langTag=en",
+      "source_priority": "official",
       "verified": true,
       "confidence": 1.0,
       "denomination_label": "10 feninga",
-      "metal_value_ready": false
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -6245,15 +6251,15 @@
       "year_from": 1998,
       "year_to": null,
       "composition": "Copper-plated steel",
-      "weight_g": null,
-      "diameter_mm": null,
+      "weight_g": 4.5,
+      "diameter_mm": 22.0,
       "source": "Central Bank of Bosnia and Herzegovina — KM Coins",
-      "source_url": "https://www.cbbh.ba/Content/Read/1072",
-      "source_priority": "official_composition_only",
+      "source_url": "https://www.cbbh.ba/content/DownloadAttachment/?id=e009346a-213a-47f4-b78b-e82393907fc6&langTag=en",
+      "source_priority": "official",
       "verified": true,
       "confidence": 1.0,
       "denomination_label": "20 feninga",
-      "metal_value_ready": false
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -6264,15 +6270,15 @@
       "year_from": 1998,
       "year_to": null,
       "composition": "Copper-plated steel",
-      "weight_g": null,
-      "diameter_mm": null,
+      "weight_g": 5.2,
+      "diameter_mm": 24.5,
       "source": "Central Bank of Bosnia and Herzegovina — KM Coins",
-      "source_url": "https://www.cbbh.ba/Content/Read/1072",
-      "source_priority": "official_composition_only",
+      "source_url": "https://www.cbbh.ba/content/DownloadAttachment/?id=e009346a-213a-47f4-b78b-e82393907fc6&langTag=en",
+      "source_priority": "official",
       "verified": true,
       "confidence": 1.0,
       "denomination_label": "50 feninga",
-      "metal_value_ready": false
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -6283,15 +6289,15 @@
       "year_from": 2000,
       "year_to": null,
       "composition": "Nickel-plated steel",
-      "weight_g": null,
-      "diameter_mm": null,
+      "weight_g": 4.9,
+      "diameter_mm": 23.25,
       "source": "Central Bank of Bosnia and Herzegovina — KM Coins",
-      "source_url": "https://www.cbbh.ba/Content/Read/1072",
-      "source_priority": "official_composition_only",
+      "source_url": "https://www.cbbh.ba/content/DownloadAttachment/?id=2666ce3e-8da5-417b-aa8d-0fc0e58c3f32&langTag=en",
+      "source_priority": "official",
       "verified": true,
       "confidence": 1.0,
       "denomination_label": "1 KM",
-      "metal_value_ready": false
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -6302,15 +6308,15 @@
       "year_from": 2000,
       "year_to": null,
       "composition": "Bimetallic: cupro-nickel inner / nickel-brass outer",
-      "weight_g": null,
-      "diameter_mm": null,
+      "weight_g": 6.9,
+      "diameter_mm": 25.75,
       "source": "Central Bank of Bosnia and Herzegovina — KM Coins",
-      "source_url": "https://www.cbbh.ba/Content/Read/1072",
-      "source_priority": "official_composition_only",
+      "source_url": "https://www.cbbh.ba/content/DownloadAttachment/?id=2666ce3e-8da5-417b-aa8d-0fc0e58c3f32&langTag=en",
+      "source_priority": "official",
       "verified": true,
       "confidence": 1.0,
       "denomination_label": "2 KM",
-      "metal_value_ready": false
+      "metal_value_ready": true
     },
     {
       "countries": [
@@ -6321,15 +6327,15 @@
       "year_from": 2006,
       "year_to": null,
       "composition": "Bimetallic: nickel-brass inner / copper-nickel outer",
-      "weight_g": null,
-      "diameter_mm": null,
+      "weight_g": 10.33,
+      "diameter_mm": 30.0,
       "source": "Central Bank of Bosnia and Herzegovina — KM Coins",
-      "source_url": "https://www.cbbh.ba/Content/Read/1072",
-      "source_priority": "official_composition_only",
+      "source_url": "https://cbbh.ba/content/DownloadAttachment/?id=68732829-d3b5-4949-91b4-22140860e813&langTag=bs",
+      "source_priority": "official",
       "verified": true,
       "confidence": 1.0,
       "denomination_label": "5 KM",
-      "metal_value_ready": false
+      "metal_value_ready": true
     },
     {
       "countries": [
