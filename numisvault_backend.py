@@ -2919,37 +2919,81 @@ def new_releases():
 
 @app.get("/api/metal-spot")
 def metal_spot():
-    """Return live XAU/XAG USD/oz plus USD->EUR using server-side requests.
-    Browser-side public CORS proxies are intentionally avoided.
+    """Return live XAU/XAG USD/oz plus USD->EUR.
 
-    Diagnostic note: the current production implementation has no gold-api.com
-    request path. Log that fact explicitly so Render logs cannot be
-    misinterpreted as a silent failure of a provider that was never called.
+    Primary provider: gold-api.com (free real-time endpoint, no API key).
+    Fallback: goldprice.org. Never fabricates prices: if both providers fail,
+    the endpoint returns HTTP 503 and the frontend keeps showing unavailable.
     """
-    print("[metal-spot][gold-api] NOT_CONFIGURED: no gold-api.com request path in current backend",flush=True)
+    gold_usd_oz=None
+    silver_usd_oz=None
+    source=None
+    errors=[]
+
+    # Primary: gold-api.com. Fetch XAU and XAG independently so a malformed
+    # response for one metal cannot silently become the other's price.
     try:
-        print("[metal-spot][goldprice] REQUEST https://data-asg.goldprice.org/dbXRates/USD",flush=True)
-        r=SESSION.get("https://data-asg.goldprice.org/dbXRates/USD",timeout=12)
-        print(f"[metal-spot][goldprice] HTTP {r.status_code}",flush=True)
-        r.raise_for_status()
-        data=r.json()
-        item=(data.get("items") or [None])[0]
-        if not item or item.get("xauPrice") is None or item.get("xagPrice") is None:
-            raise ValueError("unexpected goldprice response")
-        rates=fx_rates()
-        eur=rates.get("EUR")
-        if not eur:
-            raise ValueError("EUR exchange rate unavailable")
-        print("[metal-spot][goldprice] SUCCESS: XAU/XAG received; EUR FX available",flush=True)
-        return jsonify({
-            "gold_usd_oz":float(item["xauPrice"]),
-            "silver_usd_oz":float(item["xagPrice"]),
-            "usd_to_eur":float(eur),
-            "source":"goldprice.org + CoinBids FX"
-        })
+        print("[metal-spot][gold-api] REQUEST XAU + XAG",flush=True)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fut_gold=pool.submit(requests.get,"https://api.gold-api.com/price/XAU",timeout=10)
+            fut_silver=pool.submit(requests.get,"https://api.gold-api.com/price/XAG",timeout=10)
+            rg=fut_gold.result()
+            rs=fut_silver.result()
+        print(f"[metal-spot][gold-api] HTTP XAU={rg.status_code} XAG={rs.status_code}",flush=True)
+        rg.raise_for_status(); rs.raise_for_status()
+        dg=rg.json(); ds=rs.json()
+        gold_usd_oz=float(dg["price"])
+        silver_usd_oz=float(ds["price"])
+        if gold_usd_oz<=0 or silver_usd_oz<=0:
+            raise ValueError("non-positive metal price")
+        source="gold-api.com"
+        print("[metal-spot][gold-api] SUCCESS: XAU/XAG received",flush=True)
     except Exception as e:
-        print(f"[metal-spot][goldprice] FAILED: {type(e).__name__}: {e}",flush=True)
-        return jsonify({"error":"live metal price unavailable"}),503
+        errors.append(f"gold-api: {type(e).__name__}: {e}")
+        print(f"[metal-spot][gold-api] FAILED: {type(e).__name__}: {e}",flush=True)
+
+    # Fallback retained for resilience. It is currently known to return 403
+    # from Render, but keeping it costs nothing unless the primary fails and
+    # allows automatic recovery if that provider later permits Render traffic.
+    if gold_usd_oz is None or silver_usd_oz is None:
+        try:
+            print("[metal-spot][goldprice] REQUEST https://data-asg.goldprice.org/dbXRates/USD",flush=True)
+            r=SESSION.get("https://data-asg.goldprice.org/dbXRates/USD",timeout=12)
+            print(f"[metal-spot][goldprice] HTTP {r.status_code}",flush=True)
+            r.raise_for_status()
+            data=r.json()
+            item=(data.get("items") or [None])[0]
+            if not item or item.get("xauPrice") is None or item.get("xagPrice") is None:
+                raise ValueError("unexpected goldprice response")
+            gold_usd_oz=float(item["xauPrice"])
+            silver_usd_oz=float(item["xagPrice"])
+            if gold_usd_oz<=0 or silver_usd_oz<=0:
+                raise ValueError("non-positive metal price")
+            source="goldprice.org"
+            print("[metal-spot][goldprice] SUCCESS: XAU/XAG received",flush=True)
+        except Exception as e:
+            errors.append(f"goldprice: {type(e).__name__}: {e}")
+            print(f"[metal-spot][goldprice] FAILED: {type(e).__name__}: {e}",flush=True)
+
+    if gold_usd_oz is None or silver_usd_oz is None:
+        return jsonify({"error":"live metal price unavailable","providers_failed":errors}),503
+
+    # fx_rates() is EUR-based (1 EUR = rates["USD"] USD), therefore USD->EUR
+    # is its reciprocal. The previous code used rates["EUR"] (=1.0), which
+    # incorrectly treated USD and EUR as equal in Metal Value calculations.
+    rates=fx_rates()
+    usd_per_eur=rates.get("USD")
+    if not usd_per_eur:
+        print("[metal-spot][fx] FAILED: USD exchange rate unavailable",flush=True)
+        return jsonify({"error":"live FX rate unavailable"}),503
+    usd_to_eur=1.0/float(usd_per_eur)
+
+    return jsonify({
+        "gold_usd_oz":gold_usd_oz,
+        "silver_usd_oz":silver_usd_oz,
+        "usd_to_eur":usd_to_eur,
+        "source":source+" + CoinBids FX"
+    })
 
 @app.get("/health")
 def health():
