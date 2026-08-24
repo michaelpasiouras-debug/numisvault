@@ -33,7 +33,7 @@ jobs:
           [ ! -f test_search_filter_regression.py ] || python test_search_filter_regression.py
           [ ! -f test_theme_issue_matching.py ] || python test_theme_issue_matching.py
       - name: Full offline audit
-        run: python coinbids_audit.py --mode offline
+        run: python coinbids_audit_v2.py --mode offline
       - name: Upload audit reports
         if: always()
         uses: actions/upload-artifact@v4
