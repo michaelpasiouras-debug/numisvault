@@ -2046,7 +2046,21 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    if(!evidence.length){box.innerHTML='<span class="warn">Insufficient validated price data. CoinBids will not invent an auction value.</span>';return}
    const p25=quantile(evidence,.25),p50=median(evidence),p75=quantile(evidence,.75);
    const marketMed=median(dealerSample), realizedMed=median(realized);
-   const bestDealerAllIn=anchors.length?Math.min(...anchors):null;
+   // Canonical live purchase anchor: use the SAME selection rule as Price Research.
+   // This prevents Auction Intelligence from showing a different "best dealer offer"
+   // for the same backend response (e.g. 210.00 instead of Price Research's 161.75).
+   const includeShipping=true;
+   const canonicalBest=(includeShipping && data.cheapest_known_delivered)
+     ? data.cheapest_known_delivered
+     : (data.best_offer || ((data.offers||[])[0]||null));
+   const canonicalBestAllIn=canonicalBest
+     ? (includeShipping
+         ? (canonicalBest.total==null?null:Number(canonicalBest.total))
+         : Number(canonicalBest.price))
+     : null;
+   const bestDealerAllIn=Number.isFinite(canonicalBestAllIn)
+     ? canonicalBestAllIn
+     : (anchors.length?Math.min(...anchors):null);
    // ONE valuation model:
    // - realized auctions dominate when supplied;
    // - without realized sales, dealer median estimates the market center;
