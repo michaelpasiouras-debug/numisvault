@@ -1195,7 +1195,7 @@ function coinSpecCacheKey(coin){
  const catalogIds=coin.catalogIds&&Object.keys(coin.catalogIds).length
    ?Object.entries(coin.catalogIds).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`${k}:${v}`).join(',')
    :'';
- return 'spec-v11-labelled-specs|'+[coin.countryEN||coin.country||'',coin.denom||'',coin.year||'',coin.variant||'',catalogIds,coin.themeHint||'']
+ return 'spec-v12-mashops-metals|'+[coin.countryEN||coin.country||'',coin.denom||'',coin.year||'',coin.variant||'',catalogIds,coin.themeHint||'']
    .map(x=>String(x||'').trim().toLowerCase()).join('|');
 }
 function coinSpecCacheGet(key){
@@ -1331,17 +1331,23 @@ async function fetchCatalogLookup(endpoint,t,researchToken){
    const comp=typeof m.composition==='string'?m.composition:'';
    if($('mComposition')) $('mComposition').value=comp||'—';
    const parsedComp=parseNumistaComposition(comp);
-   $('mMetal').value=parsedComp.metal;
-   $('mFineness').disabled=!parsedComp.precious;
-   $('mFineness').placeholder=parsedComp.precious?'e.g. 900':'N/A — common alloy';
+   const explicitMetal=String(m.primary_metal||'').toLowerCase();
+   const metalMap={silver:'silver',gold:'gold',platinum:'platinum',palladium:'palladium'};
+   const resolvedMetal=metalMap[explicitMetal]||parsedComp.metal;
+   const explicitFineness=(m.fineness_per_mille!=null && Number(m.fineness_per_mille)>0)?Number(m.fineness_per_mille):null;
+   const resolvedFineness=explicitFineness??parsedComp.fineness;
+   const isPrecious=['silver','gold','platinum','palladium','other_precious'].includes(resolvedMetal);
+   $('mMetal').value=resolvedMetal;
+   $('mFineness').disabled=!isPrecious;
+   $('mFineness').placeholder=isPrecious?'e.g. 900':'N/A — common alloy';
    if(m.weight_g!=null && Number(m.weight_g)>0) $('mWeight').value=Number(m.weight_g);
-   if(parsedComp.fineness!=null) $('mFineness').value=parsedComp.fineness;
+   if(resolvedFineness!=null) $('mFineness').value=resolvedFineness;
    refreshFineMetalGrams();
-   if(parsedComp.precious && parsedComp.fineness==null){
+   if(isPrecious && resolvedFineness==null){
      $('mResultBox').innerHTML='<span class="warn">Precious metal detected, but the available composition does not provide a usable fineness. Metal value will not be guessed.</span>';
-   }else if(parsedComp.metal==='platinum'||parsedComp.metal==='palladium'||parsedComp.metal==='other_precious'){
+   }else if(resolvedMetal==='platinum'||resolvedMetal==='palladium'||resolvedMetal==='other_precious'){
      $('mResultBox').innerHTML='<span class="warn">Precious-metal content detected and fine grams calculated. Live melt-value pricing is currently automatic only for silver and gold.</span>';
-   }else if(parsedComp.precious && Number($('mWeight').value)>0 && Number($('mFineness').value)>0){
+   }else if(isPrecious && Number($('mWeight').value)>0 && Number($('mFineness').value)>0){
      $('mResultBox').textContent='Metal specification loaded. Calculating live intrinsic metal value automatically...';
      await calculateMainMetalValueAuto();
    }else if(comp){
@@ -1507,8 +1513,10 @@ async function buildResearch(){
  }
  $('researchQueries').innerHTML=html;renderOffers();
  renderOwnedBox(checkOwnCollection(t));
- // Price Research is the user-facing critical path. Keep its request isolated
- // from the heavier specification crawl so repeat searches stay responsive.
+ // Price Research remains the critical path, but verified specification
+ // enrichment must also run. Launch it independently so metals can fill in
+ // without delaying the price result.
+ void fetchCatalogLookup(ep,tEN,researchToken);
  await autoResearch(ep,tEN,researchToken);
 }
 $('researchBtn').onclick=()=>{captureResearchState();return buildResearch()};
