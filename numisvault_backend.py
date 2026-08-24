@@ -2921,9 +2921,16 @@ def new_releases():
 def metal_spot():
     """Return live XAU/XAG USD/oz plus USD->EUR using server-side requests.
     Browser-side public CORS proxies are intentionally avoided.
+
+    Diagnostic note: the current production implementation has no gold-api.com
+    request path. Log that fact explicitly so Render logs cannot be
+    misinterpreted as a silent failure of a provider that was never called.
     """
+    print("[metal-spot][gold-api] NOT_CONFIGURED: no gold-api.com request path in current backend",flush=True)
     try:
+        print("[metal-spot][goldprice] REQUEST https://data-asg.goldprice.org/dbXRates/USD",flush=True)
         r=SESSION.get("https://data-asg.goldprice.org/dbXRates/USD",timeout=12)
+        print(f"[metal-spot][goldprice] HTTP {r.status_code}",flush=True)
         r.raise_for_status()
         data=r.json()
         item=(data.get("items") or [None])[0]
@@ -2933,6 +2940,7 @@ def metal_spot():
         eur=rates.get("EUR")
         if not eur:
             raise ValueError("EUR exchange rate unavailable")
+        print("[metal-spot][goldprice] SUCCESS: XAU/XAG received; EUR FX available",flush=True)
         return jsonify({
             "gold_usd_oz":float(item["xauPrice"]),
             "silver_usd_oz":float(item["xagPrice"]),
@@ -2940,7 +2948,7 @@ def metal_spot():
             "source":"goldprice.org + CoinBids FX"
         })
     except Exception as e:
-        print(f"[metal-spot] {type(e).__name__}: {e}",flush=True)
+        print(f"[metal-spot][goldprice] FAILED: {type(e).__name__}: {e}",flush=True)
         return jsonify({"error":"live metal price unavailable"}),503
 
 @app.get("/health")
