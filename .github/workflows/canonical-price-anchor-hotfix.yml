@@ -1,1 +1,33 @@
-x
+name: Canonical price anchor hotfix
+on:
+  push:
+    paths:
+      - '.github/workflows/canonical-price-anchor-hotfix.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch canonical search cache identity
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('numisvault_backend.py')
+          s=p.read_text(encoding='utf-8')
+          old='''    raw_query=str(payload.get("raw_query") or coin.get("raw") or "").strip().lower()\n    parts=[raw_query]\n    parts+=[str(coin.get(k) or "").strip().lower() for k in\n           ("country","denom","denomination","year","variant","grade")]\n    parts+=[str(payload.get("include_shipping")),str(payload.get("currency") or "EUR").upper(),\n            str(payload.get("ship_to") or ""),\n            str(payload.get("scan_limit") or ""),str(payload.get("sample_limit") or "")]\n    return "|".join(parts)'''
+          new='''    raw_query=str(payload.get("raw_query") or coin.get("raw") or "").strip().lower()\n    # Price Research and Auction Intelligence are two views of the SAME live\n    # purchase market. Same raw query + destination + currency must share one\n    # snapshot so the canonical dealer anchor cannot contradict itself.\n    if raw_query:\n        parts=[raw_query]\n    else:\n        parts=[str(coin.get(k) or "").strip().lower() for k in\n               ("country","denom","denomination","year","variant","grade")]\n    parts+=[str(bool(payload.get("include_shipping"))),\n            str(payload.get("currency") or "EUR").upper(),\n            str(payload.get("ship_to") or "").strip().lower()]\n    return "|".join(parts)'''
+          if old not in s:
+              raise SystemExit('Expected cache-key block not found; refusing unsafe patch')
+          p.write_text(s.replace(old,new,1),encoding='utf-8')
+          PY
+      - name: Verify backend syntax
+        run: python -m py_compile numisvault_backend.py
+      - name: Commit hotfix
+        run: |
+          git config user.name 'coinbids-hotfix-bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add numisvault_backend.py
+          git commit -m 'Unify canonical dealer-price snapshot across research and auction'
+          git push
