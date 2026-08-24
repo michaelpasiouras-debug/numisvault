@@ -9,6 +9,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   offline-audit:
     runs-on: ubuntu-latest
@@ -26,6 +29,8 @@ jobs:
           else
             pip install Flask flask-cors requests beautifulsoup4
           fi
+      - name: Apply verified catalog fixes
+        run: python apply_coinbids_catalog_fixes.py
       - name: Existing regression suites
         run: |
           set -e
@@ -34,6 +39,18 @@ jobs:
           [ ! -f test_theme_issue_matching.py ] || python test_theme_issue_matching.py
       - name: Full offline audit
         run: python coinbids_audit_v2.py --mode offline
+      - name: Commit verified catalog fixes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if git diff --quiet -- coin_specs_database_MASTER_EUROPE_v17.json; then
+            echo 'No catalog changes to commit.'
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add coin_specs_database_MASTER_EUROPE_v17.json
+            git commit -m 'Apply verified CoinBids catalog audit fixes'
+            git push
+          fi
       - name: Upload audit reports
         if: always()
         uses: actions/upload-artifact@v4
