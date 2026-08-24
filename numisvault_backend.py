@@ -467,6 +467,14 @@ COUNTRY_ISO2 = {
 }
 BANKNOTE_TERMS=("banknote","bank note","paper money","billet","banknoten","banknoten","pick #","pick p","watermark","serial number")
 SET_TERMS=("kursmünzensatz","kursmunzensatz","coin set","coins set","annual set","year set","complete set","roll","rouleau","lot of","lot ")
+# Explicitly non-numismatic products that can appear in broad MA-Shops searches.
+# These are only used as a NEGATIVE signal; UNKNOWN titles remain eligible so
+# ordinary coin listings do not need to contain the literal word "coin".
+NON_COIN_PRODUCT_TERMS=(
+    "postcard","post card","postal card","postkarte","grußkarte","grusskarte",
+    "carte postale","cartolina","postkarte gebraucht","briefmarke","stamp",
+    "philately","philatelic"
+)
 COIN_TERMS=("coin","münze","munze","monnaie","moneta","commemorative","gedenkmünze","gedenkmunze","mint","proof","unc","bu")
 SOLD_TERMS=("sold out","sold","verkauft","vendu","venduto","vendido","out of stock","not available","nicht verfügbar","nicht verfuegbar","reserved","reserviert")
 def looks_unavailable(text):
@@ -618,9 +626,47 @@ def parse_denomination(s):
     val=float(m.group(1));unit=_normalize_denom_unit(m.group(2))
     return val,unit
 
+def parse_target_denomination(s):
+    """Parse the REQUESTED denomination, including resolver display labels.
+
+    The resolver deliberately returns human-readable currency names such as
+    "Greek drachma" or "Deutsche Mark".  Those are excellent UI labels but the
+    old strict parser expected the denomination unit immediately after the
+    number, so "5 Greek drachma" parsed as None.  denomination_matches() then
+    treated a missing target parse as "no denomination constraint" and could
+    accept 5 Pfennig, postcards, etc.
+
+    Listing-side parsing stays strict.  Only the TARGET gets this tolerant
+    fallback: number + a known currency/denomination alias anywhere in the
+    short remainder of the target label.
+    """
+    direct=parse_denomination(s)
+    if direct:return direct
+    a=norm(s).replace(",",".")
+    m=re.search(r"(?<!\d)(\d+(?:\.\d+)?)(?!\d)",a)
+    if not m:return None
+    try: val=float(m.group(1))
+    except Exception:return None
+    tail=a[m.end():].strip()
+    if not tail:return None
+
+    hits=[]
+    for alias,canon in _ALT_TO_CANON.items():
+        # aliases are already normalized lower-case strings; use conservative
+        # token boundaries so e.g. "mark" cannot match inside "market".
+        if re.search(rf"(?<![a-z]){re.escape(alias)}(?![a-z])",tail,re.I):
+            hits.append((len(alias),canon))
+    # Symbols are handled by parse_denomination() above; this fallback is for
+    # human-readable resolver labels only.
+    if not hits:return None
+    hits.sort(reverse=True)
+    return val,hits[0][1]
+
 def denomination_matches(target, title):
-    td=parse_denomination(target)
-    if not td:return True
+    td=parse_target_denomination(target)
+    # A non-empty target that cannot be parsed must NEVER disable the hard
+    # denomination gate. Fail closed instead of accepting every listing.
+    if not td:return False if str(target or "").strip() else True
     candidates=re.findall(r"(?<!\d)(\d+(?:[.,]\d+)?)\s*(" + DENOM_UNIT_ALT + r")(?![a-z])",norm(title),re.I)
     for v,u in candidates:
         d=parse_denomination(f"{v} {u}")
@@ -631,8 +677,10 @@ def classify_asset(title):
     a=norm(title)
     bank=sum(1 for x in BANKNOTE_TERMS if x in a)
     coin=sum(1 for x in COIN_TERMS if x in a)
+    other=sum(1 for x in NON_COIN_PRODUCT_TERMS if x in a)
     if re.search(r"\bp[- ]?\d{1,5}[a-z]?\b",a,re.I): bank+=3
     if bank>=2 and bank>coin:return "BANKNOTE",min(.99,.65+.08*bank)
+    if other>=1 and coin==0:return "OTHER",min(.99,.82+.04*other)
     if coin>=1:return "COIN",min(.98,.70+.06*coin)
     return "UNKNOWN",.45
 
@@ -1031,7 +1079,7 @@ def passes_hard_filter(title, payload):
     a=norm(title)
     if not a:return False
     asset,conf=classify_asset(title)
-    if asset=="BANKNOTE":return False
+    if asset in ("BANKNOTE","OTHER"):return False
     if product_scope(title)!="SINGLE_COIN":return False
     year=str(coin.get("year") or "").strip()
     if year and not re.search(rf"(?<!\d){re.escape(year)}(?!\d)",a):return False
@@ -1360,7 +1408,18 @@ def extract_cards(soup, source_url, payload):
         # A plain "free shipping" claim is the one exception: sellers who
         # advertise that generally mean it broadly, not per-destination.
         if shipping is not None and shipping_status!="free":
-            shipping_status="unverified"
+            requested_dest=(payload.get("ship_to") or "").strip()
+            if requested_dest:
+                dest_pattern,_,dest_display=destination_pattern_and_iso(requested_dest)
+                # Only trust the compact search-row amount when the SAME row
+                # explicitly names the requested destination (e.g.
+                # "+ 5,50 EUR shipping (to Greece)").
+                if re.search(dest_pattern,text,re.I):
+                    shipping_status="known_target_search"
+                else:
+                    shipping_status="unverified"
+            else:
+                shipping_status="unverified"
         offer={"title":title,"url":g["url"],"price":price,"shipping":shipping,"shipping_status":shipping_status,
                "currency":currency,"dealer":"","grade":"","availability":"",
                "_match_text":match_text,
@@ -2896,7 +2955,7 @@ def coin_search():
         # complete row when available; other sources fall back to title.
         match_text=o.get("_match_text") or o.get("title","")
         asset,conf=classify_asset(match_text);o["asset_type"]=asset;o["asset_confidence"]=conf
-        if asset=="BANKNOTE":rejected["asset"]+=1;continue
+        if asset in ("BANKNOTE","OTHER"):rejected["asset"]+=1;continue
         if product_scope(match_text)!="SINGLE_COIN":rejected["scope"]+=1;continue
         if not passes_hard_filter(match_text,payload):rejected["identity"]+=1;continue
         if target_identity:
@@ -2996,20 +3055,52 @@ def coin_search():
 
 
     # Normalize item prices, then resolve destination shipping locally.
+    # Keep a bounded list of the cheapest DB misses for ONE final direct
+    # item-page check.  This closes the "shipping unknown although MA-Shops
+    # explicitly shows +X EUR shipping (to Greece)" gap without returning to
+    # the old unbounded 30-40 detail-page crawl that exhausted Render workers.
+    detail_fallback=[]
     for o in valid:
         finalize(o)
         if include_shipping:
-            if lookup_mashops_shipping(o,ship_to_country,item_weight_g):
+            if o.get("shipping_status")=="known_target_search" and o.get("shipping") is not None:
+                # Search row explicitly named the chosen destination.
+                finalize(o)
+            elif lookup_mashops_shipping(o,ship_to_country,item_weight_g):
                 o["shipping_weight_g"]=item_weight_g
                 o["shipping_weight_source"]=shipping_weight_source
                 finalize(o)
             else:
-                # Search-result shipping is not destination-safe. If the DB
-                # cannot select a tier (often because weight is unknown), do
-                # not guess a total.
                 o["shipping"]=None
                 o["shipping_status"]="unknown_db_no_match"
                 o["total"]=None
+                detail_fallback.append(o)
+
+    # At most the two cheapest unresolved offers, in parallel.  Direct GET only
+    # (use_geo_proxy=False): no paid proxy and no undefined fetch_geo_targeted
+    # path. If the returned page names another destination, it remains unknown
+    # for the user's destination rather than being guessed.
+    if include_shipping and detail_fallback:
+        candidates_for_detail=sorted(
+            detail_fallback,
+            key=lambda o:(o.get("price") is None,o.get("price") if o.get("price") is not None else float("inf"))
+        )[:2]
+        with ThreadPoolExecutor(max_workers=min(2,len(candidates_for_detail))) as _detail_pool:
+            _future_map={_detail_pool.submit(enrich_offer_from_item_page,o,ship_to_country,False):o for o in candidates_for_detail}
+            for _f in as_completed(_future_map):
+                _o=_future_map[_f]
+                try:
+                    _f.result()
+                except Exception as _e:
+                    print(f"[shipping-detail] fallback failed: {type(_e).__name__}: {_e}",flush=True)
+                # Only a target-confirmed figure is allowed into delivered total.
+                if _o.get("shipping_status") in ("known_target","free") and _o.get("shipping") is not None:
+                    _o["shipping_source"]="MA-Shops item page"
+                    finalize(_o)
+                else:
+                    _o["shipping"]=None
+                    _o["shipping_status"]="unknown"
+                    _o["total"]=None
 
     valid.sort(
         key=lambda o:(
@@ -3087,7 +3178,7 @@ def coin_search():
         "sources_ok":["MA-Shops"] if used else [],
         "sources_failed":["MA-Shops"] if errors and not used else [],"errors":errors[-6:],
         "note":"The two cheapest validated matching COIN listings found after scanning both normal and cheapest-first MA-Shops search results are shown as purchase anchors. Dealer market value (Auction Intelligence) uses a separate, broader relevance-ranked sample — not only those two lowest asks. Unknown shipping is never treated as free.",
-        "shipping_note":f"shipping=null means unknown. shipping_status distinguishes confidence: known_target (confirmed for your chosen destination, {ship_to_country}), known_other_destination (a specific other destination was found — see shipping_destination), known_unconfirmed_destination (a flat rate was found with no destination stated), free (confirmed free), unknown (nothing reliable found).",
+        "shipping_note":f"shipping=null means unknown. shipping_status distinguishes confidence: known_target (item page confirmed your chosen destination, {ship_to_country}), known_target_search (MA-Shops search row explicitly named your chosen destination), known_target_db (matched dealer/destination tier in the local shipping database), known_other_destination (a specific other destination was found — see shipping_destination), known_unconfirmed_destination (a flat rate was found with no destination stated), free (confirmed free), unknown (nothing reliable found).",
         "ship_to_country":ship_to_country,
         "cache":"miss"
     }

@@ -1383,7 +1383,16 @@ async function resolveCoinViaBackend(raw,endpoint,{signal=null}={}){
    if(!res.ok) throw new Error(data.error||('HTTP '+res.status));
    if(data.status==='resolved' && data.best){
      const b=data.best;
-     const denom=b.denomination_value==null?(local.denom||''):`${Number(b.denomination_value)} ${b.currency||b.currency_code||''}`;
+     // IMPORTANT: keep parseCoinText()'s canonical, machine-filterable
+     // denomination when the user actually supplied one ("5 drachma",
+     // "5 δραχμές" -> "5 drachma").  The resolver's `currency` field is a
+     // human-readable display label ("Greek drachma", "Deutsche Mark"), so
+     // constructing "5 Greek drachma" used to make the backend denomination
+     // parser fail and silently disable the hard denomination gate.
+     let denom=local.denom||'';
+     if(!denom && b.denomination_value!=null){
+       denom=`${Number(b.denomination_value)} ${b.currency||b.currency_code||''}`.trim();
+     }
      return {ok:true,parsed:{...local,raw,country:b.country||local.country||'',denom,year:String(b.year||local.year||''),variant:local.variant||'',grade:local.grade||''},resolution:data,searchVariants:b.search_variants||[]};
    }
    return {ok:false,parsed:local,resolution:data,searchVariants:[]};
@@ -1773,7 +1782,9 @@ function shippingLabel(o){
  const amt=money(o.shipping,o.currency);
  const target=getShipToCountry();
  switch(o.shipping_status){
-   case 'known_target': return `${amt} <span class="muted" style="font-size:11px">(to ${esc(o.shipping_destination||target)})</span>`;
+   case 'known_target':
+   case 'known_target_search':
+   case 'known_target_db': return `${amt} <span class="muted" style="font-size:11px">(to ${esc(o.shipping_destination||target)})</span>`;
    case 'known_other_destination': return `${amt} <span class="warn" style="font-size:11px">(to ${esc(o.shipping_destination||'other destination')} — not ${esc(target)})</span>`;
    case 'known_unconfirmed_destination': return `${amt} <span class="warn" style="font-size:11px">(destination unconfirmed)</span>`;
    case 'free': return `${amt} <span class="muted" style="font-size:11px">(free${o.shipping_destination?' to '+esc(o.shipping_destination):''})</span>`;
