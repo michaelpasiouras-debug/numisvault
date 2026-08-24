@@ -17,14 +17,7 @@
     "lot of",
     "bulk lot",
     "fantasy issue",
-    "souvenir",
-    "postcard",
-    "post card",
-    "postkarte",
-    "grusskarte",
-    "grußkarte",
-    "carte postale",
-    "cartolina"
+    "souvenir"
   ],
   "catalog_prefixes": {
     "KM": [
@@ -363,7 +356,10 @@
         "mecanismo de anticitera",
         "μηχανισμος των αντικυθηρων",
         "αντικυθηρα",
-        "αντικυθηρων"
+        "αντικυθηρων",
+        "ancient greek technology",
+        "greek technology",
+        "archaia ellinini technologia"
       ],
       "confidence_source": "seed_verified_structure"
     }
