@@ -1806,15 +1806,13 @@ function parseComparableAmounts(){
  if(!el)return [];
  return (el.value||'').split(/[\n,;]+/).map(x=>Number(String(x).trim().replace(',','.'))).filter(x=>Number.isFinite(x)&&x>0);
 }
-// --- Auction Intelligence 3.0 (Beta) — additive evidence panel ---------
+// --- Auction Intelligence 3.0 — realized-sale evidence layer ---------
 // Calls the new /api/auction/* endpoints (Manual/CSV comparable parsing,
 // classification, weighted realized-market statistics, dynamic dealer/
 // auction fusion, Confidence 2.0, Demand, Trend, and snapshot-based bid/sell
-// advice). This NEVER replaces the existing STRONG BUY/BUY/FAIR/CAUTION/STOP
-// verdict above — it appends a clearly-labeled, more detailed evidence
-// section below it. If the backend doesn't have these modules available (or
-// the calls fail for any reason), this silently produces nothing extra and
-// the existing legacy verdict is completely unaffected.
+// advice). The main Auction Intelligence card below is the ONLY user-facing
+// decision engine. This layer supplies realized-sale diagnostics/evidence and
+// must never render a second, contradictory recommendation or max-bid set.
 function auctionV3Base(ep){return ep.replace(/\/api\/coin-search(?:\?.*)?$/,'')}
 async function computeAuctionV3(ep,resolvedBest,dealerSample,anchors,mode,signal=null){
  if(!resolvedBest)return null;
@@ -1877,30 +1875,19 @@ function renderAuctionV3Panel(v3,mode,currency){
      `<span style="font-size:12px">${esc(c.title||'—')}</span>${meta?`<br><span class="muted" style="font-size:11px">${esc(meta)}</span>`:''}</div>`;
  }).join('');
  const compTable=comps.length?`<div style="margin-top:8px">${compCards}</div>`:'';
+ // Deliberately do not render bidAdvice/sellAdvice here. The primary card is
+ // the single source of truth for Decision and max-hammer thresholds.
  let verdictHtml='';
- if(mode==='buy'&&v3.bidAdvice){
-   const b=v3.bidAdvice;
-   verdictHtml=b.recommendation?
-     `<div class="notice" style="margin-top:8px"><b>3.0 recommendation:</b> ${esc(b.recommendation)} — ${esc(b.reason||'')}<br>`+
-     `<b>Current all-in:</b> ${m(b.current_all_in)} · <b>Value/Fair/Collector max hammer:</b> ${m(b.value_buy_max_hammer)} / ${m(b.fair_buy_max_hammer)} / ${m(b.collector_max_hammer)}</div>`
-     :`<div class="muted" style="margin-top:8px">${esc(b.reason||'No bid entered yet.')}</div>`;
- }else if(mode==='sell'&&v3.sellAdvice){
-   const se=v3.sellAdvice,est=se.estimate||{},res=se.reserve||{},sb=se.starting_bid||{},net=(se.net_proceeds||{}).at_central_estimate||{};
-   verdictHtml=`<div class="notice" style="margin-top:8px"><b>3.0 estimate:</b> ${m(est.estimate_low)} – ${m(est.estimate_high)} (central ${m(est.estimate_central)})<br>`+
-     `<b>Suggested reserve:</b> ${m(res.reserve)} · <b>Starting bid:</b> ${m(sb.starting_bid)}<br>`+
-     `<b>Net proceeds at central estimate:</b> ${m(net.net_proceeds)} (after ${esc(String(net.total_deductions!=null?m(net.total_deductions):'—'))} in commission/fees)</div>`;
- }
- return `<details style="margin-top:12px" open><summary style="cursor:pointer;color:#8fd0c9"><b>⚡ Auction Intelligence 3.0 (Beta) — realized-sale evidence</b></summary><div style="margin-top:8px;font-size:13px">`+
+ return `<details style="margin-top:12px" open><summary style="cursor:pointer;color:#8fd0c9"><b>⚡ Realized-sale evidence</b></summary><div style="margin-top:8px;font-size:13px">`+
    `<div><b>Realized market:</b> ${rm.count||0} matched sale(s) (${rm.exact_count||0} exact, ${rm.strong_count||0} strong, ${rm.supporting_count||0} supporting) across ${rm.distinct_auction_houses||0} house(s). ${esc(rm.sample_note||'')}</div>`+
    (rm.count?`<div style="margin-top:4px"><b>Weighted median:</b> ${m(rm.weighted_median)} · <b>P25–P75:</b> ${m(rm.p25)} – ${m(rm.p75)} · <b>Dispersion:</b> ${esc(rm.dispersion_label||'—')}</div>`:'')+
-   `<div style="margin-top:4px"><b>Fair Value (fused):</b> ${m(fus.fair_low)} – ${m(fus.fair_high)}, central ${m(fus.fair_central)} <span class="muted">(realized weight ${Math.round((fus.realized_weight||0)*100)}% — ${esc(fus.basis||'')})</span></div>`+
    fxNote+
    `<div style="margin-top:4px"><b>Confidence:</b> ${esc(conf.label||'—')} (${conf.score||0}/100)${confBar}</div>`+
    `<div style="margin-top:4px"><b>Observed demand:</b> ${esc(dem.label||'—')} <span class="muted">${esc(dem.caveat||'')}</span></div>`+
    `<div style="margin-top:4px"><b>Trend:</b> ${esc(tr.label||'—')}${tr.annualized_change_pct!=null?` (${tr.annualized_change_pct>0?'+':''}${tr.annualized_change_pct}%/yr)`:''} <span class="muted">${esc(tr.note||'')}</span></div>`+
    compTable+
    verdictHtml+
-   `<div class="muted" style="margin-top:8px">Beta engine, additive to the verdict above. Uses only manually/CSV-entered realized comparables — no automated external auction scraping (CoinArchives/acsearch ToS prohibit it; Biddr/NumisBids require explicit permission not yet obtained).</div>`+
+   `<div class="muted" style="margin-top:8px">Realized-sale evidence is supplementary. The Decision card above is the single recommendation. Realized comparables here come only from manually/CSV-entered data.</div>`+
    `</div></details>`;
 }
 
@@ -2051,7 +2038,15 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    if(!evidence.length){box.innerHTML='<span class="warn">Insufficient validated price data. CoinBids will not invent an auction value.</span>';return}
    const p25=quantile(evidence,.25),p50=median(evidence),p75=quantile(evidence,.75);
    const marketMed=median(dealerSample), realizedMed=median(realized);
-   const fair=realized.length?((realizedMed*0.8)+(marketMed!=null?marketMed*0.2:realizedMed*0.2)):marketMed;
+   const bestDealerAllIn=anchors.length?Math.min(...anchors):null;
+   // ONE valuation model:
+   // - realized auctions dominate when supplied;
+   // - without realized sales, dealer median estimates the market center;
+   // - the live cheapest validated all-in offer is a hard current-market
+   //   reality check and is shown separately (never mistaken for fair value).
+   const fair=realized.length
+     ? ((realizedMed*0.8)+(marketMed!=null?marketMed*0.2:realizedMed*0.2))
+     : marketMed;
    const confidence=realized.length>=8?'High':realized.length>=3?'Medium':'Low';
    // Shipping is automatic: use the median known shipping charge from validated matching listings.
    // If no validated shipping evidence exists, keep it at 0 but explicitly treat that as unavailable,
@@ -2076,7 +2071,13 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    }
    const allIn=current*(1+prem)+ship+fees;
    const safety=confidence==='High'?0.15:confidence==='Medium'?0.20:0.25;
-   const valueAllIn=fair*(1-safety), fairAllIn=fair, collectorAllIn=fair*(confidence==='Low'?1.05:1.10);
+   // Auction ceilings are all-in ceilings first, then converted back to hammer.
+   // If the same exact coin can be bought from a validated dealer for less,
+   // an auction ceiling must not recommend paying more than that live option.
+   const dealerCap=Number.isFinite(bestDealerAllIn)?bestDealerAllIn:Number.POSITIVE_INFINITY;
+   const valueAllIn=Math.min(fair*(1-safety),dealerCap*0.90);
+   const fairAllIn=Math.min(fair,dealerCap*0.97);
+   const collectorAllIn=Math.min(fair*(confidence==='Low'?1.02:1.08),dealerCap);
    const toHammer=x=>Math.max(0,(x-ship-fees)/(1+prem));
    let status='FAIR',cls='warn';
    if(allIn<=valueAllIn*.92){status='STRONG BUY';cls='good'}
@@ -2097,7 +2098,7 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    const belowMelt=mode==='buy'&&currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0&&allIn<meltEUR;
    if(belowMelt){status='STRONG BUY — BELOW METAL VALUE';cls='good'}
    const dg=data.diagnostics||{};
-   const evidenceNote=realized.length?`${realized.length} realized comparables + ${dealerSample.length} dealer-market valuation matches (${anchors.length} lowest purchase anchors shown separately)`:`No realized auction comparables were supplied; dealer-value center uses ${dealerSample.length} strict identity-validated MA-Shops match(es) for this exact issue, while the ${anchors.length} cheapest offers are kept separate as purchase anchors. Confidence is deliberately low and the strongest normal buy verdict is suppressed.`;
+   const evidenceNote=realized.length?`${realized.length} realized comparables + ${dealerSample.length} strict dealer-market matches. The live best dealer offer is a separate purchase alternative and caps auction ceilings.`:`No realized auction comparables were supplied. Fair value uses ${dealerSample.length} strict identity-validated dealer match(es); the live best dealer offer is kept separate as today's purchase alternative and caps auction ceilings. Confidence is deliberately low.`;
    const evidenceHtml=`<details style="margin-top:10px"><summary style="cursor:pointer;color:#f0d38b">Why? / Evidence used</summary><div style="margin-top:8px;font-size:13px">`+
      `<div><b>Method:</b> ${realized.length?'Weighted mainly toward user-supplied realized auction comparables (80%); a broader validated dealer-market sample is the secondary anchor (20%). The two cheapest listings are not used as the entire valuation sample.':'Median/quantiles of a broader relevance-ranked validated MA-Shops sample after simple IQR outlier filtering. The two cheapest listings are shown separately as purchase anchors; no realized sales were supplied.'}</div>`+
      (knownAnchorOffers.length?`<div style="margin-top:6px"><b>Known delivered purchase anchors (${knownAnchorOffers.length}):</b><br>`+knownAnchorOffers.map(o=>`— ${esc(o.title||'MA-Shops listing')}: ${money(o.total,o.currency)}${o.identity_match_score!=null?` · match ${Math.round(o.identity_match_score)}/100`:''}${o.url?` — <a class="searchlink" href="${esc(o.url)}" target="_blank" rel="noopener">open</a>`:''}`).join('<br>')+`</div>`:'')+
@@ -2114,7 +2115,7 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
        <div class="kpi-mini"><div class="k">Current all-in</div><div class="v">${money(allIn,$('aCurrency').value)}</div></div>
        <div class="kpi-mini"><div class="k">Fair-value center</div><div class="v">${money(fair,$('aCurrency').value)}</div></div>
        <div class="kpi-mini"><div class="k">Confidence</div><div class="v">${confidence}</div></div>
-     </div><div class="notice" style="margin-top:12px"><b>Value Buy max hammer:</b> ${money(toHammer(valueAllIn),$('aCurrency').value)}<br><b>Fair Buy max hammer:</b> ${money(toHammer(fairAllIn),$('aCurrency').value)}<br><b>Collector max hammer:</b> ${money(toHammer(collectorAllIn),$('aCurrency').value)}${currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0?`<br><b>Verified intrinsic metal value:</b> ${money(meltEUR,'EUR')}${belowMelt?' — current all-in is below melt value.':''}`:''}<br><b>Shipping used:</b> ${shippingKnown?money(ship,$('aCurrency').value)+' (automatic market estimate)':'No validated shipping estimate available'}</div><div class="muted" style="margin-top:10px">${esc(evidenceNote)} Auction outcomes remain uncertain.</div>${evidenceHtml}${v3Html}`;
+     </div><div class="notice" style="margin-top:12px"><b>Value Buy max hammer:</b> ${money(toHammer(valueAllIn),$('aCurrency').value)}<br><b>Fair Buy max hammer:</b> ${money(toHammer(fairAllIn),$('aCurrency').value)}<br><b>Collector max hammer:</b> ${money(toHammer(collectorAllIn),$('aCurrency').value)}${Number.isFinite(bestDealerAllIn)?`<br><b>Current best dealer offer:</b> ${money(bestDealerAllIn,$('aCurrency').value)} all-in — auction ceilings are capped against this live alternative.`:''}${currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0?`<br><b>Verified intrinsic metal value:</b> ${money(meltEUR,'EUR')}${belowMelt?' — current all-in is below melt value.':''}`:''}<br><b>Shipping used:</b> ${shippingKnown?money(ship,$('aCurrency').value)+' (automatic market estimate)':'No validated shipping estimate available'}</div><div class="muted" style="margin-top:10px">${esc(evidenceNote)} Auction outcomes remain uncertain.</div>${evidenceHtml}${v3Html}`;
    }else{
      box.innerHTML=`<div class="auction-status">SELL ESTIMATE</div><div class="auction-grid">
        <div class="kpi-mini"><div class="k">P25</div><div class="v">${money(p25,$('aCurrency').value)}</div></div>
