@@ -2083,10 +2083,18 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    // If the same exact coin can be bought from a validated dealer for less,
    // an auction ceiling must not recommend paying more than that live option.
    const dealerCap=Number.isFinite(bestDealerAllIn)?bestDealerAllIn:Number.POSITIVE_INFINITY;
-   const valueAllIn=Math.min(fair*(1-safety),dealerCap*0.90);
-   const fairAllIn=Math.min(fair,dealerCap*0.97);
-   const collectorAllIn=Math.min(fair*(confidence==='Low'?1.02:1.08),dealerCap);
+   const meltEUR=auctionMetalFloor?.valueEUR;
+   const currencyIsEUR=$('aCurrency').value==='EUR';
+   const verifiedMetalFloorAllIn=(currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0)?meltEUR:null;
+   const marketValueAllIn=Math.min(fair*(1-safety),dealerCap*0.90);
+   const marketFairAllIn=Math.min(fair,dealerCap*0.97);
+   const marketCollectorAllIn=Math.min(fair*(confidence==='Low'?1.02:1.08),dealerCap);
+   const metalCappedFloor=Number.isFinite(verifiedMetalFloorAllIn)?Math.min(verifiedMetalFloorAllIn,dealerCap):null;
+   const valueAllIn=Number.isFinite(metalCappedFloor)?Math.max(marketValueAllIn,metalCappedFloor):marketValueAllIn;
+   const fairAllIn=Math.max(Math.min(marketFairAllIn,dealerCap),valueAllIn);
+   const collectorAllIn=Math.max(Math.min(marketCollectorAllIn,dealerCap),fairAllIn);
    const toHammer=x=>Math.max(0,(x-ship-fees)/(1+prem));
+   const metalMaxHammer=Number.isFinite(verifiedMetalFloorAllIn)?toHammer(verifiedMetalFloorAllIn):null;
    let status='FAIR',cls='warn';
    if(allIn<=valueAllIn*.92){status='STRONG BUY';cls='good'}
    else if(allIn<=valueAllIn){status='BUY';cls='good'}
@@ -2101,9 +2109,7 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
      status='POTENTIAL BUY — LOW CONFIDENCE';
      cls='warn';
    }
-   const meltEUR=auctionMetalFloor?.valueEUR;
-   const currencyIsEUR=$('aCurrency').value==='EUR';
-   const belowMelt=mode==='buy'&&currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0&&allIn<meltEUR;
+   const belowMelt=mode==='buy'&&Number.isFinite(verifiedMetalFloorAllIn)&&allIn<verifiedMetalFloorAllIn;
    if(belowMelt){status='STRONG BUY — BELOW METAL VALUE';cls='good'}
    const dg=data.diagnostics||{};
    const evidenceNote=realized.length?`${realized.length} realized comparables + ${dealerSample.length} strict dealer-market matches. The live best dealer offer is a separate purchase alternative and caps auction ceilings.`:`No realized auction comparables were supplied. Fair value uses ${dealerSample.length} strict identity-validated dealer match(es); the live best dealer offer is kept separate as today's purchase alternative and caps auction ceilings. Confidence is deliberately low.`;
@@ -2122,8 +2128,8 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
      box.innerHTML=`<div class="auction-status ${cls}">${status}</div><div class="auction-grid">
        <div class="kpi-mini"><div class="k">Current all-in</div><div class="v">${money(allIn,$('aCurrency').value)}</div></div>
        <div class="kpi-mini"><div class="k">Fair-value center</div><div class="v">${money(fair,$('aCurrency').value)}</div></div>
-       <div class="kpi-mini"><div class="k">Confidence</div><div class="v">${confidence}</div></div>
-     </div><div class="notice" style="margin-top:12px"><b>Value Buy max hammer:</b> ${money(toHammer(valueAllIn),$('aCurrency').value)}<br><b>Fair Buy max hammer:</b> ${money(toHammer(fairAllIn),$('aCurrency').value)}<br><b>Collector max hammer:</b> ${money(toHammer(collectorAllIn),$('aCurrency').value)}${Number.isFinite(bestDealerAllIn)?`<br><b>Current best dealer offer:</b> ${money(bestDealerAllIn,$('aCurrency').value)} all-in — auction ceilings are capped against this live alternative.`:''}${currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0?`<br><b>Verified intrinsic metal value:</b> ${money(meltEUR,'EUR')}${belowMelt?' — current all-in is below melt value.':''}`:''}<br><b>Shipping used:</b> ${shippingKnown?money(ship,$('aCurrency').value)+' (automatic market estimate)':'No validated shipping estimate available'}</div><div class="muted" style="margin-top:10px">${esc(evidenceNote)} Auction outcomes remain uncertain.</div>${evidenceHtml}${v3Html}`;
+       <div class="kpi-mini"><div class="k">${Number.isFinite(verifiedMetalFloorAllIn)?'Metal-value floor':'Confidence'}</div><div class="v">${Number.isFinite(verifiedMetalFloorAllIn)?money(verifiedMetalFloorAllIn,'EUR'):confidence}</div></div>
+     </div><div class="notice" style="margin-top:12px"><b>Value Buy max hammer:</b> ${money(toHammer(valueAllIn),$('aCurrency').value)}<br><b>Fair Buy max hammer:</b> ${money(toHammer(fairAllIn),$('aCurrency').value)}<br><b>Collector max hammer:</b> ${money(toHammer(collectorAllIn),$('aCurrency').value)}${Number.isFinite(metalMaxHammer)?`<br><b>Metal-value max hammer:</b> ${money(metalMaxHammer,'EUR')} — intrinsic floor from verified live metal value; actively used in the decision.`:''}${Number.isFinite(bestDealerAllIn)?`<br><b>Current best dealer offer:</b> ${money(bestDealerAllIn,$('aCurrency').value)} all-in — auction ceilings are capped against this live alternative.`:''}${Number.isFinite(verifiedMetalFloorAllIn)?`<br><b>Verified intrinsic metal value:</b> ${money(verifiedMetalFloorAllIn,'EUR')}${belowMelt?' — <strong>current all-in is below metal value, so the decision is STRONG BUY.</strong>':' — used as an independent buy floor.'}`:''}<br><b>Shipping used:</b> ${shippingKnown?money(ship,$('aCurrency').value)+' (automatic market estimate)':'No validated shipping estimate available'}</div><div class="muted" style="margin-top:10px">${esc(evidenceNote)} Auction outcomes remain uncertain.</div>${evidenceHtml}${v3Html}`;
    }else{
      box.innerHTML=`<div class="auction-status">SELL ESTIMATE</div><div class="auction-grid">
        <div class="kpi-mini"><div class="k">P25</div><div class="v">${money(p25,$('aCurrency').value)}</div></div>
