@@ -2066,9 +2066,15 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    // - without realized sales, dealer median estimates the market center;
    // - the live cheapest validated all-in offer is a hard current-market
    //   reality check and is shown separately (never mistaken for fair value).
-   const fair=realized.length
+   const rawFair=realized.length
      ? ((realizedMed*0.8)+(marketMed!=null?marketMed*0.2:realizedMed*0.2))
      : marketMed;
+   // In BUY mode, an immediately available validated dealer offer is market reality:
+   // fair value must not be displayed above what the same exact coin can be bought for now.
+   // Realized/dealer-sample valuation remains useful, but the live dealer alternative caps it.
+   const fair=($('aMode').value==='buy' && Number.isFinite(bestDealerAllIn))
+     ? Math.min(rawFair,bestDealerAllIn)
+     : rawFair;
    const confidence=realized.length>=8?'High':realized.length>=3?'Medium':'Low';
    // Shipping is automatic: use the median known shipping charge from validated matching listings.
    // If no validated shipping evidence exists, keep it at 0 but explicitly treat that as unavailable,
@@ -2126,7 +2132,7 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    const belowMelt=mode==='buy'&&Number.isFinite(verifiedMetalFloorAllIn)&&allIn<verifiedMetalFloorAllIn;
    if(belowMelt){status='STRONG BUY — BELOW METAL VALUE';cls='good'}
    const dg=data.diagnostics||{};
-   const evidenceNote=realized.length?`${realized.length} realized comparables + ${dealerSample.length} strict dealer-market matches. The live best dealer offer is a separate purchase alternative and caps auction ceilings.`:`No realized auction comparables were supplied. Fair value uses ${dealerSample.length} strict identity-validated dealer match(es); the live best dealer offer is kept separate as today's purchase alternative and caps auction ceilings. Confidence is deliberately low.`;
+   const evidenceNote=realized.length?`${realized.length} realized comparables + ${dealerSample.length} strict dealer-market matches. The live best dealer offer is a separate purchase alternative and caps auction ceilings.`:`No realized auction comparables were supplied. Fair value uses ${dealerSample.length} strict identity-validated dealer match(es) and, in buy mode, is capped by today's cheapest validated delivered dealer offer. Confidence is deliberately low.`;
    const evidenceHtml=`<details style="margin-top:10px"><summary style="cursor:pointer;color:#f0d38b">Why? / Evidence used</summary><div style="margin-top:8px;font-size:13px">`+
      `<div><b>Method:</b> ${realized.length?'Weighted mainly toward user-supplied realized auction comparables (80%); a broader validated dealer-market sample is the secondary anchor (20%). The two cheapest listings are not used as the entire valuation sample.':'Median/quantiles of a broader relevance-ranked validated MA-Shops sample after simple IQR outlier filtering. The two cheapest listings are shown separately as purchase anchors; no realized sales were supplied.'}</div>`+
      (knownAnchorOffers.length?`<div style="margin-top:6px"><b>Known delivered purchase anchors (${knownAnchorOffers.length}):</b><br>`+knownAnchorOffers.map(o=>`— ${esc(o.title||'MA-Shops listing')}: ${money(o.total,o.currency)}${o.identity_match_score!=null?` · match ${Math.round(o.identity_match_score)}/100`:''}${o.url?` — <a class="searchlink" href="${esc(o.url)}" target="_blank" rel="noopener">open</a>`:''}`).join('<br>')+`</div>`:'')+
