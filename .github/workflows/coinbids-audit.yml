@@ -21,7 +21,11 @@ jobs:
       - name: Install project dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install Flask flask-cors requests beautifulsoup4
+          fi
       - name: Existing regression suites
         run: |
           set -e
