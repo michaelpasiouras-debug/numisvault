@@ -1,0 +1,100 @@
+name: Apply auction metal-floor integration fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/metal-floor-auction-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Integrate metal value into auction decision
+        shell: python
+        run: |
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+
+          old="""   const dealerCap=Number.isFinite(bestDealerAllIn)?bestDealerAllIn:Number.POSITIVE_INFINITY;
+   const valueAllIn=Math.min(fair*(1-safety),dealerCap*0.90);
+   const fairAllIn=Math.min(fair,dealerCap*0.97);
+   const collectorAllIn=Math.min(fair*(confidence==='Low'?1.02:1.08),dealerCap);
+   const toHammer=x=>Math.max(0,(x-ship-fees)/(1+prem));
+"""
+          new="""   const dealerCap=Number.isFinite(bestDealerAllIn)?bestDealerAllIn:Number.POSITIVE_INFINITY;
+   const meltEUR=auctionMetalFloor?.valueEUR;
+   const currencyIsEUR=$('aCurrency').value==='EUR';
+   const verifiedMetalFloorAllIn=(currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0)?meltEUR:null;
+   // Metal value is an independent intrinsic-value floor. For precious-metal
+   // coins, a verified melt value participates directly in the BUY decision:
+   // if current all-in is below melt, CoinBids should want the coin even when
+   // dealer/auction evidence is sparse. Market/dealer caps still prevent us
+   // from recommending an auction price above a cheaper live dealer option.
+   const marketValueAllIn=Math.min(fair*(1-safety),dealerCap*0.90);
+   const marketFairAllIn=Math.min(fair,dealerCap*0.97);
+   const marketCollectorAllIn=Math.min(fair*(confidence==='Low'?1.02:1.08),dealerCap);
+   const metalCappedFloor=Number.isFinite(verifiedMetalFloorAllIn)?Math.min(verifiedMetalFloorAllIn,dealerCap):null;
+   const valueAllIn=Number.isFinite(metalCappedFloor)?Math.max(marketValueAllIn,metalCappedFloor):marketValueAllIn;
+   const fairAllIn=Math.max(Math.min(marketFairAllIn,dealerCap),valueAllIn);
+   const collectorAllIn=Math.max(Math.min(marketCollectorAllIn,dealerCap),fairAllIn);
+   const toHammer=x=>Math.max(0,(x-ship-fees)/(1+prem));
+   const metalMaxHammer=Number.isFinite(verifiedMetalFloorAllIn)?toHammer(verifiedMetalFloorAllIn):null;
+"""
+          if old not in s:
+              raise SystemExit('ceiling block not found')
+          s=s.replace(old,new,1)
+
+          old2="""   const meltEUR=auctionMetalFloor?.valueEUR;
+   const currencyIsEUR=$('aCurrency').value==='EUR';
+   const belowMelt=mode==='buy'&&currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0&&allIn<meltEUR;
+   if(belowMelt){status='STRONG BUY — BELOW METAL VALUE';cls='good'}
+"""
+          new2="""   const belowMelt=mode==='buy'&&Number.isFinite(verifiedMetalFloorAllIn)&&allIn<verifiedMetalFloorAllIn;
+   if(belowMelt){status='STRONG BUY — BELOW METAL VALUE';cls='good'}
+"""
+          if old2 not in s:
+              raise SystemExit('below-melt block not found')
+          s=s.replace(old2,new2,1)
+
+          old3="""     box.innerHTML=`<div class=\"auction-status ${cls}\">${status}</div><div class=\"auction-grid\">
+       <div class=\"kpi-mini\"><div class=\"k\">Current all-in</div><div class=\"v\">${money(allIn,$('aCurrency').value)}</div></div>
+       <div class=\"kpi-mini\"><div class=\"k\">Fair-value center</div><div class=\"v\">${money(fair,$('aCurrency').value)}</div></div>
+       <div class=\"kpi-mini\"><div class=\"k\">Confidence</div><div class=\"v\">${confidence}</div></div>
+"""
+          new3="""     box.innerHTML=`<div class=\"auction-status ${cls}\">${status}</div><div class=\"auction-grid\">
+       <div class=\"kpi-mini\"><div class=\"k\">Current all-in</div><div class=\"v\">${money(allIn,$('aCurrency').value)}</div></div>
+       <div class=\"kpi-mini\"><div class=\"k\">Fair-value center</div><div class=\"v\">${money(fair,$('aCurrency').value)}</div></div>
+       <div class=\"kpi-mini\"><div class=\"k\">${Number.isFinite(verifiedMetalFloorAllIn)?'Metal-value floor':'Confidence'}</div><div class=\"v\">${Number.isFinite(verifiedMetalFloorAllIn)?money(verifiedMetalFloorAllIn,'EUR'):confidence}</div></div>
+"""
+          if old3 not in s:
+              raise SystemExit('KPI block not found')
+          s=s.replace(old3,new3,1)
+
+          needle="""<b>Collector max hammer:</b> ${money(toHammer(collectorAllIn),$('aCurrency').value)}${Number.isFinite(bestDealerAllIn)?`<br><b>Current best dealer offer:</b> ${money(bestDealerAllIn,$('aCurrency').value)} all-in — auction ceilings are capped against this live alternative.`:''}${currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0?`<br><b>Verified intrinsic metal value:</b> ${money(meltEUR,'EUR')}${belowMelt?' — current all-in is below melt value.':''}`:''}<br><b>Shipping used:</b>"""
+          replacement="""<b>Collector max hammer:</b> ${money(toHammer(collectorAllIn),$('aCurrency').value)}${Number.isFinite(metalMaxHammer)?`<br><b>Metal-value max hammer:</b> ${money(metalMaxHammer,'EUR')} — intrinsic floor from verified live metal value; this is actively used in the decision.`:''}${Number.isFinite(bestDealerAllIn)?`<br><b>Current best dealer offer:</b> ${money(bestDealerAllIn,$('aCurrency').value)} all-in — auction ceilings are capped against this live alternative.`:''}${Number.isFinite(verifiedMetalFloorAllIn)?`<br><b>Verified intrinsic metal value:</b> ${money(verifiedMetalFloorAllIn,'EUR')}${belowMelt?' — <strong>current all-in is below metal value, so the decision is STRONG BUY.</strong>':' — used as an independent buy floor.'}`:''}<br><b>Shipping used:</b>"""
+          if needle not in s:
+              raise SystemExit('notice block not found')
+          s=s.replace(needle,replacement,1)
+
+          p.write_text(s,encoding='utf-8')
+      - name: Sanity check
+        run: |
+          grep -q "Metal-value max hammer" index.html
+          grep -q "verifiedMetalFloorAllIn" index.html
+          grep -q "STRONG BUY — BELOW METAL VALUE" index.html
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Integrate metal value into Auction Intelligence decision"
+          git push
