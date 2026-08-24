@@ -2016,7 +2016,21 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    // Specification evidence is additive. A missing/failed fast lookup must not block auction analysis.
  }
  try{
-   const res=await fetch(ep,{method:'POST',signal:auctionCtrl.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({coin:toEnglishTerms(parsed),raw_query:q,ship_to:getShipToCountry(),currency:$('aCurrency').value,include_shipping:true,asset_type:'COIN',limit:2,scan_limit:30,sample_limit:10})});
+   // Auction Intelligence MUST use the same canonical identity evidence as
+   // Price Research.  Passing only the locally parsed country/year/denom can
+   // collapse distinct same-year issues (e.g. Greece 10 EUR 2022 Antikythera,
+   // Xenophon, Lord Byron) into one broad market search.
+   const auctionSearchCoin=toEnglishTerms(parsed);
+   if(resolvedBest){
+     auctionSearchCoin.country=resolvedBest.country||auctionSearchCoin.country;
+     auctionSearchCoin.countryEN=resolvedBest.country||auctionSearchCoin.countryEN;
+     auctionSearchCoin.catalogIds=resolvedBest.catalog_ids||null;
+     auctionSearchCoin.themeHint=(resolvedBest.variants||[]).join(' ');
+   }
+   // Preserve the user's issue/theme wording as additional strict-filter
+   // evidence when the resolver's variants are sparse.
+   if(!auctionSearchCoin.themeHint && parsed.variant) auctionSearchCoin.themeHint=parsed.variant;
+   const res=await fetch(ep,{method:'POST',signal:auctionCtrl.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({coin:auctionSearchCoin,raw_query:q,variants:[q,...(rr.searchVariants||[])],ship_to:getShipToCountry(),currency:$('aCurrency').value,include_shipping:true,asset_type:'COIN',limit:2,scan_limit:30,sample_limit:10})});
    const data=await res.json().catch(()=>({}));if(!res.ok)throw new Error(data.error||`HTTP ${res.status}`);
    // IMPORTANT: the two cheapest listings (data.offers) are purchase anchors,
    // NOT the valuation sample. Fair Value must not be computed from only the
@@ -2070,12 +2084,20 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    else if(allIn<=fairAllIn){status='FAIR';cls='warn'}
    else if(allIn<=collectorAllIn){status='CAUTION';cls='warn'}
    else {status='STOP';cls='bad'}
+   // A tiny evidence set cannot justify the strongest market verdict.  With
+   // Low confidence, cap a normal STRONG BUY at a deliberately qualified
+   // potential-buy label.  The only exception below is independently verified
+   // intrinsic metal value, which is a different evidence class.
+   if(confidence==='Low' && status==='STRONG BUY'){
+     status='POTENTIAL BUY — LOW CONFIDENCE';
+     cls='warn';
+   }
    const meltEUR=auctionMetalFloor?.valueEUR;
    const currencyIsEUR=$('aCurrency').value==='EUR';
    const belowMelt=mode==='buy'&&currencyIsEUR&&Number.isFinite(meltEUR)&&meltEUR>0&&allIn<meltEUR;
    if(belowMelt){status='STRONG BUY — BELOW METAL VALUE';cls='good'}
    const dg=data.diagnostics||{};
-   const evidenceNote=realized.length?`${realized.length} realized comparables + ${dealerSample.length} dealer-market valuation matches (${anchors.length} lowest purchase anchors shown separately)`:`No realized auction comparables were supplied; dealer-value center uses ${dealerSample.length} validated relevance-ranked MA-Shops match(es), while the ${anchors.length} cheapest offers are kept separate as purchase anchors. Confidence is deliberately low.`;
+   const evidenceNote=realized.length?`${realized.length} realized comparables + ${dealerSample.length} dealer-market valuation matches (${anchors.length} lowest purchase anchors shown separately)`:`No realized auction comparables were supplied; dealer-value center uses ${dealerSample.length} strict identity-validated MA-Shops match(es) for this exact issue, while the ${anchors.length} cheapest offers are kept separate as purchase anchors. Confidence is deliberately low and the strongest normal buy verdict is suppressed.`;
    const evidenceHtml=`<details style="margin-top:10px"><summary style="cursor:pointer;color:#f0d38b">Why? / Evidence used</summary><div style="margin-top:8px;font-size:13px">`+
      `<div><b>Method:</b> ${realized.length?'Weighted mainly toward user-supplied realized auction comparables (80%); a broader validated dealer-market sample is the secondary anchor (20%). The two cheapest listings are not used as the entire valuation sample.':'Median/quantiles of a broader relevance-ranked validated MA-Shops sample after simple IQR outlier filtering. The two cheapest listings are shown separately as purchase anchors; no realized sales were supplied.'}</div>`+
      (knownAnchorOffers.length?`<div style="margin-top:6px"><b>Known delivered purchase anchors (${knownAnchorOffers.length}):</b><br>`+knownAnchorOffers.map(o=>`— ${esc(o.title||'MA-Shops listing')}: ${money(o.total,o.currency)}${o.identity_match_score!=null?` · match ${Math.round(o.identity_match_score)}/100`:''}${o.url?` — <a class="searchlink" href="${esc(o.url)}" target="_blank" rel="noopener">open</a>`:''}`).join('<br>')+`</div>`:'')+
