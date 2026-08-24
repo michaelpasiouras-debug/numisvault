@@ -3030,12 +3030,17 @@ def _search_cache_key(payload):
     # the same cache key and one would silently serve the other's cached
     # results for up to _SEARCH_CACHE_TTL seconds.
     raw_query=str(payload.get("raw_query") or coin.get("raw") or "").strip().lower()
-    parts=[raw_query]
-    parts+=[str(coin.get(k) or "").strip().lower() for k in
-           ("country","denom","denomination","year","variant","grade")]
-    parts+=[str(payload.get("include_shipping")),str(payload.get("currency") or "EUR").upper(),
-            str(payload.get("ship_to") or ""),
-            str(payload.get("scan_limit") or ""),str(payload.get("sample_limit") or "")]
+    # Price Research and Auction Intelligence are two views of the SAME live
+    # purchase market. Same raw query + destination + currency must share one
+    # snapshot so the canonical dealer anchor cannot contradict itself.
+    if raw_query:
+        parts=[raw_query]
+    else:
+        parts=[str(coin.get(k) or "").strip().lower() for k in
+               ("country","denom","denomination","year","variant","grade")]
+    parts+=[str(bool(payload.get("include_shipping"))),
+            str(payload.get("currency") or "EUR").upper(),
+            str(payload.get("ship_to") or "").strip().lower()]
     return "|".join(parts)
 
 def _why_rejected(title, payload):
