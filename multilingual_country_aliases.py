@@ -1,5 +1,5 @@
 from __future__ import annotations
-import re, unicodedata
+import re
 
 # Shared country-name normalization for CoinBids input AND marketplace titles.
 # Focus: names commonly encountered on European numismatic marketplaces.
@@ -55,32 +55,47 @@ ALIASES={
 'Vatican City':['vatican city','vatican','vatikanstadt','cite du vatican','cité du vatican','citta del vaticano','città del vaticano','ciudad del vaticano','vaticaanstad'],
 }
 
-def _norm(s:str)->str:
-    s=unicodedata.normalize('NFKD',str(s or '').casefold())
-    s=''.join(c for c in s if not unicodedata.combining(c))
-    # IMPORTANT: this helper is used inside the existing resolver/backend norm()
-    # functions. It must therefore preserve denomination syntax and currency
-    # markers already intentionally preserved upstream. Dropping '/' previously
-    # turned 1/2 into "1 2" and regressed the ½ Rappen known-good case.
-    s=re.sub(r'[^a-z0-9α-ωа-яёіїєґ\s./€$£-]+',' ',s,flags=re.I)
-    return re.sub(r'\s+',' ',s).strip()
+# IMPORTANT: this module must not re-normalize arbitrary coin text. The resolver
+# and backend already have carefully tuned norm() functions for fractions,
+# currencies, accents and numismatic words. We therefore use a lightweight,
+# Unicode-preserving normalization ONLY to build/match country aliases and
+# replace the matched country phrase in the original normalized text.
+def _key(s:str)->str:
+    s=str(s or '').casefold().replace('_',' ')
+    s=re.sub(r'\s+',' ',s).strip()
+    return s
 
 _ALIAS_TO_CANON={}
 for canon,aliases in ALIASES.items():
     for alias in [canon,*aliases]:
-        k=_norm(alias)
+        k=_key(alias)
         if k and k not in _ALIAS_TO_CANON: _ALIAS_TO_CANON[k]=canon
-_sorted_aliases=sorted(_ALIAS_TO_CANON,key=len,reverse=True)
-_long_aliases=[a for a in _sorted_aliases if len(a)>=4]
-_ALIAS_RE=re.compile(r'(?<![a-z0-9])(?:'+ '|'.join(re.escape(a) for a in _long_aliases) +r')(?![a-z0-9])')
+
+# Add accentless equivalents as additional MATCH KEYS without changing the
+# text passed through the function. This catches input already accent-stripped
+# by coin_identity_resolver.norm() while preserving e.g. Jubiläum in backend
+# title/theme matching.
+def _accentless(s:str)->str:
+    import unicodedata
+    d=unicodedata.normalize('NFKD',s)
+    return ''.join(c for c in d if not unicodedata.combining(c))
+for alias,canon in list(_ALIAS_TO_CANON.items()):
+    k=_key(_accentless(alias))
+    _ALIAS_TO_CANON.setdefault(k,canon)
+
+_long_aliases=sorted((a for a in _ALIAS_TO_CANON if len(a)>=4),key=len,reverse=True)
+_ALIAS_RE=re.compile(r'(?<!\w)(?:'+ '|'.join(re.escape(a) for a in _long_aliases) +r')(?!\w)',re.I)
 
 def canonical_country_name(value:str):
-    n=_norm(value)
+    n=_key(value)
     if n in _ALIAS_TO_CANON:return _ALIAS_TO_CANON[n]
     m=_ALIAS_RE.search(n)
-    return _ALIAS_TO_CANON.get(m.group(0)) if m else None
+    return _ALIAS_TO_CANON.get(_key(m.group(0))) if m else None
 
 def normalize_country_aliases_in_text(text:str)->str:
-    n=_norm(text)
-    def repl(m): return _norm(_ALIAS_TO_CANON[m.group(0)])
-    return re.sub(r'\s+',' ',_ALIAS_RE.sub(repl,n)).strip()
+    # Input is already normalized by the caller. Preserve every non-country
+    # character exactly; only replace country-name spans with canonical English.
+    s=str(text or '')
+    def repl(m):
+        return _ALIAS_TO_CANON.get(_key(m.group(0)),m.group(0)).casefold()
+    return re.sub(r'\s+',' ',_ALIAS_RE.sub(repl,s)).strip()
