@@ -759,12 +759,42 @@ def make_queries(payload):
             # a validated identity, even though "review" is still a reasonable
             # status to display to a human for manual confirmation elsewhere.
             b=resolved["best"]
-            if not country and b.get("country"): country=b["country"]
-            if not year and b.get("year"): year=str(b["year"])
+            if not country and b.get("country"):
+                country=b["country"]; coin["country"]=country
+            if not year and b.get("year"):
+                year=str(b["year"]); coin["year"]=year
             if not denom and b.get("denomination_value") is not None:
                 unit=b.get("currency") or b.get("currency_code") or ""
                 denom=f'{b["denomination_value"]:g} {unit}'.strip()
+                coin["denom"]=denom
             resolver_queries=b.get("search_variants") or []
+
+    # Raw-only API callers do not have the frontend parser's separate theme
+    # field. Derive only the descriptive residue here so known same-year/same-
+    # denomination issues (e.g. Antikythera vs Lord Byron) remain strictly
+    # separated. This mirrors parseCoinText() without guessing a theme when the
+    # raw text contains only structural identity fields.
+    if raw and not str(coin.get("theme") or "").strip():
+        theme_text=norm(raw)
+        if country:
+            cn=norm(country)
+            if cn:
+                theme_text=re.sub(rf"(?<![a-z0-9]){re.escape(cn)}(?![a-z0-9])"," ",theme_text,count=1)
+        if year:
+            theme_text=re.sub(rf"(?<!\d){re.escape(str(year))}(?!\d)"," ",theme_text)
+        # Remove denomination numbers and every known unit/currency spelling;
+        # leave all other words exactly as normalized so multilingual issue
+        # matching can still use them.
+        theme_text=re.sub(r"(?<!\d)\d+(?:[.,]\d+)?(?!\d)"," ",theme_text)
+        for _aliases in CURRENCY_UNIT_ALIASES.values():
+            for _al in sorted(set(_aliases),key=len,reverse=True):
+                _an=norm(_al)
+                if _an:
+                    theme_text=re.sub(rf"(?<![a-z0-9]){re.escape(_an)}(?![a-z0-9])"," ",theme_text)
+        theme_text=re.sub(r"(?<![a-z0-9])(?:coin|coins|proof|pp|unc|uncirculated|bu|fdc|silver|gold|argento|argent|silber|zilver|ασημι|ασημένιο)(?![a-z0-9])"," ",theme_text,re.I)
+        theme_text=re.sub(r"\s+"," ",theme_text).strip(" -")
+        if theme_text:
+            coin["theme"]=theme_text
 
     qs = []
     # Exact user wording first. It is usually the highest-information query
