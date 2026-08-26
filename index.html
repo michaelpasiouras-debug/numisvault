@@ -1418,8 +1418,16 @@ function identityReviewHtml(resolution){
  return `<span class="warn"><b>Coin identity needs review.</b> CoinBids will not guess a country/currency.</span>${negWarn}${rows?`<div style="margin-top:8px">${rows}</div>`:''}`;
 }
 async function buildResearch(){
- // A new user search always wins. Cancel any background specification lookup
- // left by the previous search before doing resolver or price work.
+ // Every click is a completely new Price Research run. Allocate the token
+ // BEFORE resolver/network work so a second/third/etc. click immediately
+ // invalidates every older async continuation instead of waiting for it.
+ const researchToken=++currentResearchToken;
+ lastPriceResearchSnapshot=null;
+ currentResearchKey='';
+ if(activePriceResearchController){
+   activePriceResearchController.abort('Superseded by a newer price search');
+   activePriceResearchController=null;
+ }
  if(activeCatalogLookupController){
    activeCatalogLookupController.abort('Superseded by a newer coin search');
    activeCatalogLookupController=null;
@@ -1436,6 +1444,7 @@ async function buildResearch(){
  if(raw){
    $('bestPriceBox').innerHTML='<strong>Coin Identity Resolver:</strong> normalizing country, currency, spelling and year...';
    const rr=await resolveCoinViaBackend(raw,ep);
+   if(researchToken!==currentResearchToken) return;
    resolverInfo=rr.resolution;resolverVars=rr.searchVariants||[];
    if(rr.ok){
      t=rr.parsed;
@@ -1504,7 +1513,8 @@ async function buildResearch(){
  const tEN=toEnglishTerms(t);
  const vars=[raw,...resolverVars,...searchVariants(tEN)].filter((x,i,a)=>x&&a.indexOf(x)===i);
  currentResearchKey=[t.country,t.denom,t.year,t.variant,t.grade,$('rShipping').value,$('rCurrency').value].join('|').toLowerCase();
- const researchToken=++currentResearchToken;
+ // researchToken was allocated at the very start of this click so repeated
+ // searches cannot inherit or race the previous run.
  let html='';vars.slice(0,6).forEach((q,i)=>{html+=`<div style="width:100%;margin-bottom:8px"><span class="muted" style="font-size:11px">Query ${i+1}: <span class="mono">${esc(q)}</span></span><div class="links" style="margin-top:5px">${providerLinks(q).map(([n,u])=>`<a class="searchlink" href="${u}" target="_blank" rel="noopener">${n}</a>`).join('')}</div></div>`});
  if(resolverInfo?.best){
    const b=resolverInfo.best;
@@ -1598,10 +1608,25 @@ async function autoResearch(endpoint,t,researchToken){
    $('bestPriceBox').innerHTML='<strong>MA-Shops:</strong> validating listings and finding the two cheapest matching coins...';
    if($('rMarketValue')) $('rMarketValue').value='Searching...';
    const payload={coin:t,variants:searchVariants(t),raw_query:($('rFreeText')?.value||'').trim(),ship_to:getShipToCountry(),currency:$('rCurrency').value,include_shipping:$('rShipping').value==='include',asset_type:'COIN',limit:2};
-   const timer=setTimeout(()=>priceCtrl.abort('Price search exceeded 25 seconds'),25000);
+   const timer=setTimeout(()=>priceCtrl.abort('Price search exceeded 35 seconds'),35000);
    let res;
    try{
-     res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},signal:priceCtrl.signal,body:JSON.stringify(payload)});
+     for(let attempt=0;attempt<2;attempt++){
+       try{
+         res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},signal:priceCtrl.signal,body:JSON.stringify(payload)});
+       }catch(e){
+         if(attempt===0 && e instanceof TypeError && !priceCtrl.signal.aborted){
+           await new Promise(r=>setTimeout(r,650));
+           continue;
+         }
+         throw e;
+       }
+       if(attempt===0 && [502,503,504].includes(res.status) && !priceCtrl.signal.aborted){
+         await new Promise(r=>setTimeout(r,650));
+         continue;
+       }
+       break;
+     }
    }finally{
      clearTimeout(timer);
    }
