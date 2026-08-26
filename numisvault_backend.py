@@ -33,6 +33,7 @@ except Exception as _corrections_import_err:
     print(f"[corrections] resolver_corrections not available: {_corrections_import_err}")
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
+from multilingual_country_aliases import normalize_country_aliases_in_text
 
 app = Flask(__name__)
 ALLOWED_ORIGINS=os.environ.get("COINBIDS_CORS_ORIGINS","*").split(",")
@@ -404,7 +405,8 @@ def norm(s):
     # to match at all via plain substring comparison — strip the accent so
     # both spellings normalize the same way.
     s = s.translate(_GREEK_ACCENT_MAP)
-    return re.sub(r"\s+"," ",s).strip()
+    s = re.sub(r"\s+"," ",s).strip()
+    return normalize_country_aliases_in_text(s)
 
 COUNTRY_SYNONYMS = {
     "Ηνωμένες Πολιτείες": ["usa","united states","america","us"],

@@ -2,6 +2,7 @@ from __future__ import annotations
 import json, re, unicodedata
 from pathlib import Path
 from difflib import SequenceMatcher
+from multilingual_country_aliases import normalize_country_aliases_in_text
 
 DB_PATH = Path(__file__).with_name("coin_identity_database.json")
 ISSUE_DB_PATH = Path(__file__).with_name("coin_issue_database.json")
@@ -33,7 +34,7 @@ def norm(s:str)->str:
     s=s.replace("€"," euro ").replace("£"," gbp ").replace("$"," usd ").replace("¢"," cent ")
     s=re.sub(r"[^a-z0-9α-ωа-яёіїєґ/.\-\s]+"," ",s,flags=re.I)
     s=re.sub(r"\s+"," ",s).strip()
-    return s
+    return normalize_country_aliases_in_text(s)
 
 def variants(s:str):
     n=norm(s)
