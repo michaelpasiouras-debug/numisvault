@@ -14,14 +14,17 @@ TEXT_EXT={'.py','.json','.html','.js','.css','.yml','.yaml','.md','.txt','.sql',
 SKIP_DIRS={'.git','__pycache__','.venv','venv','node_modules'}
 files=[p for p in ROOT.rglob('*') if p.is_file() and not any(x in SKIP_DIRS for x in p.parts)]
 
-# 1) Gross repository corruption / merge markers / empty code files.
+# 1) Gross repository corruption / true unresolved merge markers / empty code files.
 for p in files:
     rel=p.relative_to(ROOT)
     if p.suffix.lower() not in TEXT_EXT and p.name not in {'Procfile','requirements.txt','robots.txt'}: continue
     try: text=p.read_text(encoding='utf-8')
     except Exception as e:
         fail(f'{rel}: not valid UTF-8 ({e})'); continue
-    if re.search(r'^(<<<<<<<|=======|>>>>>>>)',text,re.M): fail(f'{rel}: unresolved merge-conflict marker')
+    # Decorative ===== headings are common in this repo; only flag a real
+    # conflict when BOTH opening and closing Git conflict markers exist.
+    if re.search(r'^<<<<<<<\s',text,re.M) and re.search(r'^>>>>>>>\s',text,re.M):
+        fail(f'{rel}: unresolved merge-conflict markers')
     if p.suffix.lower() in {'.py','.js','.html'} and not text.strip(): fail(f'{rel}: empty executable/source file')
 ok(f'scanned {len(files)} repository files for structural corruption')
 
