@@ -421,7 +421,7 @@ COUNTRY_SYNONYMS = {
 
 COUNTRY_CANON = {
     "croatia":["croatia","croatian","hrvatska","kroatien","croatie","croazia","croacia","κροατια"],
-    "greece":["greece","greek","hellas","ellada","griechenland","griekenland","grèce","grece","grecia","ελλαδα"],
+    "greece":["greece","greek","hellas","ellada","griechenland","griekenland","grèce","grece","grecia","grécia","grecja","recko","řecko","grecko","grécko","grcka","grčka","gorogorszag","görögország","yunanistan","graekenland","grækenland","grekland","kreikka","ελλαδα"],
     "germany":["germany","deutschland","allemagne","γερμανια"],
     "france":["france","francais","française","frankreich","γαλλια"],
     "italy":["italy","italia","italien","ιταλια"],
@@ -509,8 +509,8 @@ def destination_pattern_and_iso(country_name):
 
 CURRENCY_UNIT_ALIASES = {
     # Modern
-    "euro":["euro","euros","eur"],
-    "dollar":["dollar","dollars","usd"],
+    "euro":["euro","euros","eur","evro","ευρω","ευρώ"],
+    "dollar":["dollar","dollars","usd","dolar","dollaro","δολαριο","δολαρια"],
     "pound":["pound","pounds","gbp","sterling"],
     "franc":["franc","francs","franken","frank","frs"],
     "yen":["yen"],
@@ -520,7 +520,7 @@ CURRENCY_UNIT_ALIASES = {
     # so recognizing every common spelling variant (English/German/French/
     # native-plural) is what actually prevents a real, correct match from
     # being silently rejected as "wrong denomination".
-    "drachma":["drachma","drachmas","drachmai","drachmae","drachme","drachmen"],
+    "drachma":["drachma","drachmas","drachmai","drachmae","drachme","drachmen","drachmi","drakhma","drakhmai","δραχμη","δραχμες","δραχμαι"],
     "lira":["lira","lire","liras"],
     "peseta":["peseta","pesetas","ptas"],
     "mark":["mark","marks","deutsche mark","reichsmark","dm"],
