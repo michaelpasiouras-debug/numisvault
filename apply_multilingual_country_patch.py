@@ -21,4 +21,8 @@ patch('coin_identity_resolver.py',[
 patch('numisvault_backend.py',[
 ('from difflib import SequenceMatcher\n','from difflib import SequenceMatcher\nfrom multilingual_country_aliases import normalize_country_aliases_in_text\n'),
 ('    s = s.translate(_GREEK_ACCENT_MAP)\n    return re.sub(r"\\s+"," ",s).strip()','    s = s.translate(_GREEK_ACCENT_MAP)\n    s = re.sub(r"\\s+"," ",s).strip()\n    return normalize_country_aliases_in_text(s)'),
+('    "greece":["greece","greek","hellas","ellada","griechenland","griekenland","grèce","grece","grecia","ελλαδα"],','    "greece":["greece","greek","hellas","ellada","griechenland","griekenland","grèce","grece","grecia","grécia","grecja","recko","řecko","grecko","grécko","grcka","grčka","gorogorszag","görögország","yunanistan","graekenland","grækenland","grekland","kreikka","ελλαδα"],'),
+('    "euro":["euro","euros","eur"],','    "euro":["euro","euros","eur","evro","ευρω","ευρώ"],'),
+('    "dollar":["dollar","dollars","usd"],','    "dollar":["dollar","dollars","usd","dolar","dollaro","δολαριο","δολαρια"],'),
+('    "drachma":["drachma","drachmas","drachmai","drachmae","drachme","drachmen"],','    "drachma":["drachma","drachmas","drachmai","drachmae","drachme","drachmen","drachmi","drakhma","drakhmai","δραχμη","δραχμες","δραχμαι"],'),
 ])
