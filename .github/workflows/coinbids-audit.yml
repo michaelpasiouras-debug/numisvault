@@ -62,13 +62,14 @@ jobs:
           print('All embedded JavaScript blocks passed node --check')
           PY
 
-      - name: Existing regression suites
+      - name: Regression suites
         run: |
           set -e
           [ ! -f test_resolver_regression.py ] || python test_resolver_regression.py
           [ ! -f test_search_filter_regression.py ] || python test_search_filter_regression.py
           [ ! -f test_theme_issue_matching.py ] || python test_theme_issue_matching.py
           python test_multilingual_country_resolution.py
+          python test_multilingual_market_matching.py
 
       - name: Full CoinBids domain audit
         run: python coinbids_audit_v2.py --mode offline
