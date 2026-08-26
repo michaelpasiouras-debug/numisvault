@@ -70,6 +70,7 @@ jobs:
           [ ! -f test_theme_issue_matching.py ] || python test_theme_issue_matching.py
           python test_multilingual_country_resolution.py
           python test_multilingual_market_matching.py
+          python test_raw_only_api_fallback.py
 
       - name: Full CoinBids domain audit
         run: python coinbids_audit_v2.py --mode offline
