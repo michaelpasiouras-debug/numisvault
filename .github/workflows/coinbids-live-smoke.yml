@@ -1,0 +1,115 @@
+name: CoinBids Live Smoke
+
+on:
+  push:
+    paths:
+      - '.github/workflows/coinbids-live-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Wait for production deployment and smoke-test CoinBids
+        env:
+          BASE_URL: https://www.coinbids.eu
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.request, urllib.error
+          base=os.environ['BASE_URL'].rstrip('/')
+
+          def req(path, payload=None, timeout=70):
+              data=None if payload is None else json.dumps(payload).encode('utf-8')
+              headers={'User-Agent':'CoinBids-Live-Smoke/1.0'}
+              if data is not None: headers['Content-Type']='application/json'
+              r=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if data is not None else 'GET')
+              with urllib.request.urlopen(r,timeout=timeout) as h:
+                  raw=h.read().decode('utf-8','replace')
+                  return h.status, raw, (json.loads(raw) if 'application/json' in h.headers.get('Content-Type','') else None)
+
+          # Give Render time to pick up the commit. Retry only connectivity/5xx,
+          # not semantic failures.
+          last=None
+          for attempt in range(8):
+              try:
+                  st,raw,_=req('/app',timeout=25)
+                  if st==200 and 'CoinBids' in raw:
+                      print('OK /app reachable')
+                      break
+                  last=f'/app HTTP {st}'
+              except Exception as e:
+                  last=f'{type(e).__name__}: {e}'
+              print('waiting for production:',last)
+              time.sleep(20)
+          else:
+              raise SystemExit('Production frontend/backend origin did not become reachable: '+str(last))
+
+          # Resolver: country names in different languages must canonicalize.
+          resolver_cases=[
+              ('Griekenland 10 euro 2022 antikythera mechanism','Greece',2022),
+              ('Griechenland 10 euro 2022 antikythera mechanism','Greece',2022),
+              ('Grecia 10 euro 2022 meccanismo anticitera','Greece',2022),
+              ('Grèce 10 euro 2022 mecanisme anticythere','Greece',2022),
+              ('Ελλάδα 10 Ευρώ 2022 μηχανισμός αντικυθήρων','Greece',2022),
+          ]
+          for q,country,year in resolver_cases:
+              st,raw,d=req('/api/resolve-coin',{'text':q})
+              if st!=200 or not isinstance(d,dict): raise SystemExit(f'resolver HTTP/data failure for {q!r}: {st} {raw[:300]}')
+              best=d.get('best') or d.get('coin') or {}
+              got_country=best.get('country')
+              got_year=best.get('year')
+              if got_country!=country or int(got_year or 0)!=year:
+                  raise SystemExit(f'resolver semantic failure {q!r}: country={got_country!r} year={got_year!r}; body={raw[:600]}')
+              print('OK resolve',q,'->',got_country,got_year)
+
+          # Price Research production path. One canonical English query and one
+          # multilingual query; both must execute, identify valid coin offers and
+          # return internally consistent cheapest/best data. We deliberately do
+          # not pin a price because dealer inventory changes live.
+          searches=[
+              'Greece 10 euro 2022 antikythera mechanism',
+              'Griekenland 10 euro 2022 antikythera mechanism',
+          ]
+          results=[]
+          for q in searches:
+              payload={'raw_query':q,'coin':{'raw':q},'currency':'EUR','include_shipping':True,'ship_to':'Greece','limit':2,'sample_limit':12}
+              st,raw,d=req('/api/coin-search',payload,timeout=90)
+              if st!=200 or not isinstance(d,dict): raise SystemExit(f'coin-search failure {q!r}: HTTP {st} {raw[:500]}')
+              valid=int(d.get('valid_count') or len(d.get('offers') or []))
+              if valid<1: raise SystemExit(f'coin-search found no validated offers for {q!r}: {raw[:900]}')
+              best=d.get('cheapest_known_delivered') or d.get('best_offer') or ((d.get('offers') or [None])[0])
+              if not best: raise SystemExit(f'coin-search has valid_count={valid} but no best offer for {q!r}')
+              total=best.get('total') if isinstance(best,dict) else None
+              price=best.get('price') if isinstance(best,dict) else None
+              if total is None and price is None: raise SystemExit(f'best offer has no price/total for {q!r}: {best!r}')
+              results.append((q,total if total is not None else price))
+              print('OK search',q,'valid=',valid,'best=',results[-1][1])
+
+          # The same exact coin expressed with a country alias must not resolve to
+          # a wildly different purchase market snapshot. A small difference can
+          # occur if inventory changes between requests, but a large disagreement
+          # indicates query/identity divergence.
+          a=float(results[0][1]); b=float(results[1][1])
+          if max(a,b)/max(0.01,min(a,b))>1.35:
+              raise SystemExit(f'multilingual price-anchor divergence: English={a}, Dutch-country alias={b}')
+
+          # Metal endpoint must at least be a real API endpoint. A provider outage
+          # may legitimately produce 503; connectivity/404/HTML is the regression
+          # we want to catch here.
+          try:
+              st,raw,d=req('/api/metal-spot',timeout=30)
+              if st==200: print('OK metal-spot live')
+          except urllib.error.HTTPError as e:
+              if e.code==503: print('WARN metal-spot provider unavailable (HTTP 503), endpoint itself reachable')
+              else: raise
+
+          print('LIVE SMOKE: PASS')
+          PY
