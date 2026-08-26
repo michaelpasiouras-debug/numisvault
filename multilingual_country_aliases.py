@@ -58,7 +58,11 @@ ALIASES={
 def _norm(s:str)->str:
     s=unicodedata.normalize('NFKD',str(s or '').casefold())
     s=''.join(c for c in s if not unicodedata.combining(c))
-    s=re.sub(r'[^a-z0-9α-ωа-яёіїєґ\s.-]+',' ',s,flags=re.I)
+    # IMPORTANT: this helper is used inside the existing resolver/backend norm()
+    # functions. It must therefore preserve denomination syntax and currency
+    # markers already intentionally preserved upstream. Dropping '/' previously
+    # turned 1/2 into "1 2" and regressed the ½ Rappen known-good case.
+    s=re.sub(r'[^a-z0-9α-ωа-яёіїєґ\s./€$£-]+',' ',s,flags=re.I)
     return re.sub(r'\s+',' ',s).strip()
 
 _ALIAS_TO_CANON={}
