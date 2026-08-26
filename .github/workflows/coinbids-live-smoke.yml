@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Wait for production deployment and smoke-test CoinBids
+      - name: Wait for production deployment and stress-test CoinBids
         env:
           BASE_URL: https://www.coinbids.eu
         run: |
@@ -33,7 +33,7 @@ jobs:
 
           def req_once(path, payload=None, timeout=70):
               data=None if payload is None else json.dumps(payload).encode('utf-8')
-              headers={'User-Agent':'CoinBids-Live-Smoke/2.0'}
+              headers={'User-Agent':'CoinBids-Live-Smoke/3.0'}
               if data is not None: headers['Content-Type']='application/json'
               r=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if data is not None else 'GET')
               with urllib.request.urlopen(r,timeout=timeout) as h:
@@ -46,33 +46,26 @@ jobs:
                   try:
                       return req_once(path,payload,timeout)
                   except urllib.error.HTTPError as e:
-                      body=e.read().decode('utf-8','replace')
-                      last=(e.code,body)
-                      if e.code not in (502,503,504) or attempt==attempts-1:
-                          raise
+                      body=e.read().decode('utf-8','replace'); last=(e.code,body)
+                      if e.code not in (502,503,504) or attempt==attempts-1: raise
                   except (urllib.error.URLError, TimeoutError) as e:
                       last=e
                       if attempt==attempts-1: raise
                   time.sleep(1.2*(attempt+1))
               raise RuntimeError(last)
 
-          # Wait until the DEPLOYED /app contains the repeated-research lifecycle
-          # marker, not merely until an older CoinBids deployment is reachable.
           marker='Every click is a completely new Price Research run'
           last=None
           for attempt in range(12):
               try:
                   st,raw,_=req('/app',timeout=25,attempts=2)
-                  if st==200 and 'CoinBids' in raw and marker in raw:
-                      print('OK /app deployed with repeatable Price Research fix')
+                  if st==200 and 'CoinBids' in raw and marker in raw and 'activeAuctionController' in raw:
+                      print('OK /app deployed with repeatable Price Research + Auction lifecycle')
                       break
-                  last=f'/app HTTP {st}; marker={marker in raw}'
-              except Exception as e:
-                  last=f'{type(e).__name__}: {e}'
-              print('waiting for production deployment:',last)
-              time.sleep(20)
-          else:
-              raise SystemExit('Production did not deploy the expected Price Research fix: '+str(last))
+                  last=f'/app HTTP {st}; price_marker={marker in raw}; auction_lifecycle={"activeAuctionController" in raw}'
+              except Exception as e: last=f'{type(e).__name__}: {e}'
+              print('waiting for production deployment:',last); time.sleep(20)
+          else: raise SystemExit('Production did not deploy expected lifecycle: '+str(last))
 
           resolver_cases=[
               ('Griekenland 10 euro 2022 antikythera mechanism','Greece',2022),
@@ -83,47 +76,59 @@ jobs:
           ]
           for q,country,year in resolver_cases:
               st,raw,d=req('/api/resolve-coin',{'text':q},attempts=3)
-              if st!=200 or not isinstance(d,dict): raise SystemExit(f'resolver HTTP/data failure for {q!r}: {st} {raw[:300]}')
+              if st!=200 or not isinstance(d,dict): raise SystemExit(f'resolver failure {q!r}: {st} {raw[:300]}')
               best=d.get('best') or d.get('coin') or {}
-              got_country=best.get('country'); got_year=best.get('year')
-              if got_country!=country or int(got_year or 0)!=year:
-                  raise SystemExit(f'resolver semantic failure {q!r}: country={got_country!r} year={got_year!r}; body={raw[:600]}')
-              print('OK resolve',q,'->',got_country,got_year)
+              if best.get('country')!=country or int(best.get('year') or 0)!=year:
+                  raise SystemExit(f'resolver semantic failure {q!r}: {best}')
+              print('OK resolve',q,'->',best.get('country'),best.get('year'))
 
-          # Repeated Price Research production path: first search, second search
-          # in another language, then a THIRD search again in canonical wording.
-          # All must independently complete. This explicitly guards the reported
-          # "first research works, second does not" regression.
-          searches=[
-              'Greece 10 euro 2022 antikythera mechanism',
-              'Griekenland 10 euro 2022 antikythera mechanism',
-              'Greece 10 euro 2022 antikythera mechanism',
-          ]
-          results=[]
-          for idx,q in enumerate(searches,1):
-              payload={'raw_query':q,'coin':{'raw':q},'currency':'EUR','include_shipping':True,'ship_to':'Greece','limit':2,'sample_limit':12}
+          def coin_search(q,currency='EUR'):
+              payload={'raw_query':q,'coin':{'raw':q},'currency':currency,'include_shipping':True,'ship_to':'Greece','limit':2,'sample_limit':12}
               st,raw,d=req('/api/coin-search',payload,timeout=90,attempts=3)
-              if st!=200 or not isinstance(d,dict): raise SystemExit(f'coin-search #{idx} failure {q!r}: HTTP {st} {raw[:500]}')
+              if st!=200 or not isinstance(d,dict): raise SystemExit(f'coin-search failure {q!r}: HTTP {st} {raw[:500]}')
               valid=int(d.get('valid_count') or len(d.get('offers') or []))
-              if valid<1: raise SystemExit(f'coin-search #{idx} found no validated offers for {q!r}: {raw[:900]}')
+              if valid<1: raise SystemExit(f'coin-search no validated offers {q!r}: {raw[:900]}')
               best=d.get('cheapest_known_delivered') or d.get('best_offer') or ((d.get('offers') or [None])[0])
-              if not best: raise SystemExit(f'coin-search #{idx} has valid_count={valid} but no best offer for {q!r}')
-              total=best.get('total') if isinstance(best,dict) else None
-              price=best.get('price') if isinstance(best,dict) else None
-              if total is None and price is None: raise SystemExit(f'best offer has no price/total for search #{idx}: {best!r}')
-              results.append(float(total if total is not None else price))
-              print('OK repeated search',idx,'valid=',valid,'best=',results[-1])
+              if not best: raise SystemExit(f'coin-search missing best offer {q!r}')
+              total=best.get('total') if isinstance(best,dict) else None; price=best.get('price') if isinstance(best,dict) else None
+              if total is None and price is None: raise SystemExit(f'best offer has no price {q!r}: {best!r}')
+              value=float(total if total is not None else price)
+              print('OK market search',q,'valid=',valid,'best=',value)
+              return value,d
 
-          for a,b in ((results[0],results[1]),(results[0],results[2])):
-              if max(a,b)/max(0.01,min(a,b))>1.35:
-                  raise SystemExit(f'repeated/multilingual price-anchor divergence: {a} vs {b}')
+          # Price -> Auction -> Price -> Auction -> Price. These use the same
+          # production market endpoint the two UI engines share, deliberately
+          # alternating coins/languages so stale state cannot hide behind cache.
+          sequence=[
+              ('PRICE','Greece 10 euro 2022 antikythera mechanism'),
+              ('AUCTION','Griekenland 10 euro 2022 antikythera mechanism'),
+              ('PRICE','Greece 5 euro 2021'),
+              ('AUCTION','Greece 10 euro 2022 antikythera mechanism'),
+              ('PRICE','Greece 10 euro 2022 antikythera mechanism'),
+          ]
+          anchors=[]
+          for kind,q in sequence:
+              value,data=coin_search(q); anchors.append((kind,q,value))
+
+          same=[v for kind,q,v in anchors if '10 euro 2022 antikythera mechanism' in q.lower() or '10 euro 2022 antikythera mechanism' in q.lower()]
+          if len(same)>=2:
+              lo=min(same); hi=max(same)
+              if hi/max(.01,lo)>1.35: raise SystemExit(f'alternating Price/Auction anchor divergence: {same}')
+
+          # Exercise the Auction Intelligence V3 evidence endpoints repeatedly.
+          manual_payload={'text':'2026-05-01 | 150 | EUR | BU | Test House | https://example.com/a\n2026-06-01 | 165 | EUR | Proof | Test House | https://example.com/b','default_currency':'EUR'}
+          for idx in range(1,4):
+              st,raw,d=req('/api/auction/comparables/manual',manual_payload,timeout=30,attempts=3)
+              if st!=200 or not isinstance(d,dict) or len(d.get('comparables') or [])<2:
+                  raise SystemExit(f'auction manual comparables #{idx} failed: HTTP {st} {raw[:700]}')
+              print('OK auction comparables run',idx,'rows=',len(d.get('comparables') or []))
 
           try:
               st,raw,d=req('/api/metal-spot',timeout=30,attempts=2)
               if st==200: print('OK metal-spot live')
           except urllib.error.HTTPError as e:
-              if e.code==503: print('WARN metal-spot provider unavailable (HTTP 503), endpoint itself reachable')
+              if e.code==503: print('WARN metal-spot provider unavailable (HTTP 503), endpoint reachable')
               else: raise
 
-          print('LIVE SMOKE: PASS')
+          print('SEQUENTIAL PRICE/AUCTION LIVE SMOKE: PASS')
           PY
