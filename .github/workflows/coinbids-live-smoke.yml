@@ -8,6 +8,7 @@ on:
       - 'coin_identity_resolver.py'
       - 'multilingual_country_aliases.py'
       - 'apply_multilingual_country_patch.py'
+      - 'Procfile'
       - '.github/workflows/coinbids-live-smoke.yml'
   workflow_dispatch:
 
@@ -33,7 +34,7 @@ jobs:
 
           def req_once(path, payload=None, timeout=70):
               data=None if payload is None else json.dumps(payload).encode('utf-8')
-              headers={'User-Agent':'CoinBids-Live-Smoke/3.0'}
+              headers={'User-Agent':'CoinBids-Live-Smoke/4.0'}
               if data is not None: headers['Content-Type']='application/json'
               r=urllib.request.Request(base+path,data=data,headers=headers,method='POST' if data is not None else 'GET')
               with urllib.request.urlopen(r,timeout=timeout) as h:
@@ -43,8 +44,7 @@ jobs:
           def req(path, payload=None, timeout=70, attempts=3):
               last=None
               for attempt in range(attempts):
-                  try:
-                      return req_once(path,payload,timeout)
+                  try: return req_once(path,payload,timeout)
                   except urllib.error.HTTPError as e:
                       body=e.read().decode('utf-8','replace'); last=(e.code,body)
                       if e.code not in (502,503,504) or attempt==attempts-1: raise
@@ -60,8 +60,7 @@ jobs:
               try:
                   st,raw,_=req('/app',timeout=25,attempts=2)
                   if st==200 and 'CoinBids' in raw and marker in raw and 'activeAuctionController' in raw:
-                      print('OK /app deployed with repeatable Price Research + Auction lifecycle')
-                      break
+                      print('OK /app deployed with repeatable Price Research + Auction lifecycle'); break
                   last=f'/app HTTP {st}; price_marker={marker in raw}; auction_lifecycle={"activeAuctionController" in raw}'
               except Exception as e: last=f'{type(e).__name__}: {e}'
               print('waiting for production deployment:',last); time.sleep(20)
@@ -92,30 +91,30 @@ jobs:
               if not best: raise SystemExit(f'coin-search missing best offer {q!r}')
               total=best.get('total') if isinstance(best,dict) else None; price=best.get('price') if isinstance(best,dict) else None
               if total is None and price is None: raise SystemExit(f'best offer has no price {q!r}: {best!r}')
-              value=float(total if total is not None else price)
-              print('OK market search',q,'valid=',valid,'best=',value)
+              value=round(float(total if total is not None else price),2)
+              print('OK market search',q,'valid=',valid,'best=',value,'cache=',d.get('cache'))
               return value,d
 
-          # Price -> Auction -> Price -> Auction -> Price. These use the same
-          # production market endpoint the two UI engines share, deliberately
-          # alternating coins/languages so stale state cannot hide behind cache.
-          sequence=[
-              ('PRICE','Greece 10 euro 2022 antikythera mechanism'),
-              ('AUCTION','Griekenland 10 euro 2022 antikythera mechanism'),
-              ('PRICE','Greece 5 euro 2021'),
-              ('AUCTION','Greece 10 euro 2022 antikythera mechanism'),
-              ('PRICE','Greece 10 euro 2022 antikythera mechanism'),
-          ]
-          anchors=[]
-          for kind,q in sequence:
-              value,data=coin_search(q); anchors.append((kind,q,value))
+          canonical='Greece 10 euro 2022 antikythera mechanism'
+          first,first_data=coin_search(canonical)
+          # Exact same request must be stable throughout the cache TTL. This is
+          # intentionally strict: a 161.75 -> 210 jump is a production failure,
+          # not acceptable market noise.
+          exact_values=[first]
+          for idx in range(6):
+              coin_search('Greece 5 euro 2021')
+              v,d=coin_search(canonical); exact_values.append(v)
+          if len(set(exact_values)) != 1:
+              raise SystemExit(f'EXACT market snapshot divergence: {exact_values}')
 
-          same=[v for kind,q,v in anchors if '10 euro 2022 antikythera mechanism' in q.lower() or '10 euro 2022 antikythera mechanism' in q.lower()]
-          if len(same)>=2:
-              lo=min(same); hi=max(same)
-              if hi/max(.01,lo)>1.35: raise SystemExit(f'alternating Price/Auction anchor divergence: {same}')
+          # Language aliases must resolve to the same market anchor as canonical.
+          alias_values=[]
+          for q in ('Griekenland 10 euro 2022 antikythera mechanism','Griechenland 10 euro 2022 antikythera mechanism'):
+              v,d=coin_search(q); alias_values.append(v)
+          for v in alias_values:
+              if abs(v-first) > 0.01:
+                  raise SystemExit(f'ALIAS market anchor divergence: canonical={first}, aliases={alias_values}')
 
-          # Exercise the Auction Intelligence V3 evidence endpoints repeatedly.
           manual_payload={'text':'2026-05-01 | 150 | EUR | BU | Test House | https://example.com/a\n2026-06-01 | 165 | EUR | Proof | Test House | https://example.com/b','default_currency':'EUR'}
           for idx in range(1,4):
               st,raw,d=req('/api/auction/comparables/manual',manual_payload,timeout=30,attempts=3)
@@ -130,5 +129,5 @@ jobs:
               if e.code==503: print('WARN metal-spot provider unavailable (HTTP 503), endpoint reachable')
               else: raise
 
-          print('SEQUENTIAL PRICE/AUCTION LIVE SMOKE: PASS')
+          print('STRICT SEQUENTIAL PRICE/AUCTION LIVE SMOKE: PASS')
           PY
