@@ -1,0 +1,58 @@
+name: Coin Search Live QA
+
+on:
+  push:
+    paths:
+      - 'numisvault_backend.py'
+      - 'coin_identity_resolver.py'
+      - 'multilingual_country_aliases.py'
+      - 'ma_shops_shipping.csv'
+      - 'test_live_market_qa.py'
+      - '.github/workflows/coin-search-live-qa.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  live-market-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Wait briefly for production deploy on push
+        if: github.event_name == 'push'
+        run: sleep 75
+
+      - name: Verify identity and true cheapest validated offer
+        env:
+          BASE_URL: https://www.coinbids.eu
+          SHIP_TO: Greece
+        run: python test_live_market_qa.py
+
+      - name: Publish QA summary in GitHub Actions
+        if: always()
+        shell: bash
+        run: |
+          if [ -f coin_search_live_qa_summary.md ]; then
+            cat coin_search_live_qa_summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '# CoinBids Live Search QA' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Test did not produce a summary file.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload live QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coin-search-live-qa
+          path: |
+            coin_search_live_qa.json
+            coin_search_live_qa_summary.md
+          if-no-files-found: warn
