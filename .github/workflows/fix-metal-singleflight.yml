@@ -1,0 +1,77 @@
+name: Fix metal spot single-flight
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/fix-metal-singleflight.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Patch shared metal spot request
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+
+          old = "let _spotCacheUSD=null, _spotCacheAt=0;\nasync function fetchMetalSpotFromBackend(){\n if(_spotCacheUSD && (Date.now()-_spotCacheAt)<60000) return _spotCacheUSD;"
+          new = "let _spotCacheUSD=null, _spotCacheAt=0, _spotInFlight=null;\nasync function fetchMetalSpotFromBackend(){\n if(_spotCacheUSD && (Date.now()-_spotCacheAt)<60000) return _spotCacheUSD;\n if(_spotInFlight) return _spotInFlight;"
+          if old not in s:
+              raise SystemExit('spot function header not found')
+          s = s.replace(old, new, 1)
+
+          marker = " const endpoint=getApiEndpoint();\n const u=new URL(endpoint,window.location.href);\n const base=u.origin+(u.pathname.replace(/\\/api\\/coin-search\\/?$/,''));\n const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),15000);"
+          replacement = " _spotInFlight=(async()=>{\n const endpoint=getApiEndpoint();\n const u=new URL(endpoint,window.location.href);\n const base=u.origin+(u.pathname.replace(/\\/api\\/coin-search\\/?$/,''));\n const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),15000);"
+          if marker not in s:
+              raise SystemExit('spot request body marker not found')
+          s = s.replace(marker, replacement, 1)
+
+          old_end = "   return _spotCacheUSD;\n }finally{clearTimeout(timer);}\n}\nasync function fetchSpotPricesUSD(){"
+          new_end = "   return _spotCacheUSD;\n }finally{clearTimeout(timer);}\n })();\n try{return await _spotInFlight;}finally{_spotInFlight=null;}\n}\nasync function fetchSpotPricesUSD(){"
+          if old_end not in s:
+              raise SystemExit('spot function end not found')
+          s = s.replace(old_end, new_end, 1)
+
+          old_calc = "   const [spot,eurRate]=await Promise.all([fetchSpotPricesUSD(),fetchUsdToEur()]);\n   const usdPerOz=spot[metal];"
+          new_calc = "   const spotData=await fetchMetalSpotFromBackend();\n   const spot={gold:spotData.gold,silver:spotData.silver,platinum:spotData.platinum,palladium:spotData.palladium,source:spotData.source,fxSource:spotData.fxSource};\n   const eurRate=spotData.eur;\n   const usdPerOz=spot[metal];"
+          if old_calc not in s:
+              raise SystemExit('main melt calculation block not found')
+          s = s.replace(old_calc, new_calc, 1)
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Sanity checks
+        shell: bash
+        run: |
+          grep -q '_spotInFlight' index.html
+          grep -q 'const spotData=await fetchMetalSpotFromBackend();' index.html
+          grep -q 'try{return await _spotInFlight;}finally{_spotInFlight=null;}' index.html
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          if git diff --cached --quiet; then
+            echo 'No changes needed.'
+            exit 0
+          fi
+          git commit -m 'Fix shared metal spot request and melt value race'
+          git push origin main
