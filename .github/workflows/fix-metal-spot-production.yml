@@ -1,0 +1,174 @@
+name: Fix metal spot production
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/fix-metal-spot-production.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Patch metal spot backend and frontend
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Backend: do not require BOTH XAU and XAG from one provider.
+          # Resolve each metal independently, preserve a successful quote,
+          # and add a direct Stooq daily-close fallback for XAG/XAU.
+          p=Path('numisvault_backend.py')
+          s=p.read_text(encoding='utf-8')
+          start=s.index('@app.get("/api/metal-spot")')
+          end=s.index('\n@app.get("/health")', start)
+          new=r'''@app.get("/api/metal-spot")
+def metal_spot():
+    """Return XAU/XAG USD/oz plus USD->EUR without fabricating values.
+
+    Live primary: gold-api.com. Each metal is resolved independently so an
+    XAU outage never suppresses a valid XAG quote (and vice versa). If a live
+    quote is unavailable, Stooq's latest published daily close is used as a
+    transparent delayed-market fallback. This keeps CoinBids melt value
+    functional while still exposing the actual source used.
+    """
+    quotes={"gold":None,"silver":None}
+    quote_sources={}
+    errors=[]
+
+    symbols={"gold":"XAU","silver":"XAG"}
+    for metal,symbol in symbols.items():
+        try:
+            r=requests.get(f"https://api.gold-api.com/price/{symbol}",timeout=10,
+                           headers={"User-Agent":"CoinBids/1.0","Accept":"application/json"})
+            r.raise_for_status()
+            d=r.json(); price=float(d.get("price"))
+            if not math.isfinite(price) or price<=0: raise ValueError("invalid price")
+            quotes[metal]=price; quote_sources[metal]="gold-api.com live"
+        except Exception as e:
+            errors.append(f"gold-api {symbol}: {type(e).__name__}: {e}")
+
+    # Existing goldprice feed remains a secondary live source. Importantly,
+    # only fill the individual quote(s) still missing.
+    if any(v is None for v in quotes.values()):
+        try:
+            r=SESSION.get("https://data-asg.goldprice.org/dbXRates/USD",timeout=12)
+            r.raise_for_status(); data=r.json(); item=(data.get("items") or [None])[0]
+            if not item: raise ValueError("unexpected goldprice response")
+            for metal,key in (("gold","xauPrice"),("silver","xagPrice")):
+                if quotes[metal] is None and item.get(key) is not None:
+                    price=float(item[key])
+                    if math.isfinite(price) and price>0:
+                        quotes[metal]=price; quote_sources[metal]="goldprice.org live"
+        except Exception as e:
+            errors.append(f"goldprice: {type(e).__name__}: {e}")
+
+    # Last-resort market-data fallback. Stooq CSV is a delayed daily close,
+    # not a made-up constant; source is returned explicitly to the UI.
+    stooq={"gold":"xauusd","silver":"xagusd"}
+    for metal,ticker in stooq.items():
+        if quotes[metal] is not None: continue
+        try:
+            r=requests.get(f"https://stooq.com/q/l/?s={ticker}&f=sd2t2ohlcv&h&e=csv",timeout=12,
+                           headers={"User-Agent":"CoinBids/1.0"})
+            r.raise_for_status()
+            lines=[x.strip() for x in r.text.splitlines() if x.strip()]
+            if len(lines)<2: raise ValueError("empty Stooq response")
+            header=[x.strip().lower() for x in lines[0].split(',')]
+            row=[x.strip() for x in lines[1].split(',')]
+            close=float(row[header.index('close')])
+            if not math.isfinite(close) or close<=0: raise ValueError("invalid Stooq close")
+            quotes[metal]=close; quote_sources[metal]="Stooq latest daily close"
+        except Exception as e:
+            errors.append(f"Stooq {ticker}: {type(e).__name__}: {e}")
+
+    # Silver is the immediate CoinBids requirement. Return any independently
+    # available metal instead of throwing away a valid quote because its peer
+    # failed. Frontend already validates the requested metal before computing.
+    if quotes["gold"] is None and quotes["silver"] is None:
+        return jsonify({"error":"metal prices unavailable","providers_failed":errors}),503
+
+    rates=fx_rates(); usd_per_eur=rates.get("USD")
+    if not usd_per_eur:
+        return jsonify({"error":"live FX rate unavailable","providers_failed":errors}),503
+    usd_to_eur=1.0/float(usd_per_eur)
+
+    return jsonify({
+        "gold_usd_oz":quotes["gold"],
+        "silver_usd_oz":quotes["silver"],
+        "usd_to_eur":usd_to_eur,
+        "source":"; ".join(f"{m}: {quote_sources[m]}" for m in ("gold","silver") if m in quote_sources),
+        "fx_source":"CoinBids FX",
+        "providers_failed":errors,
+    })
+'''
+          s=s[:start]+new+s[end:]
+          p.write_text(s,encoding='utf-8')
+
+          # Frontend: Number(null) is 0, which hides a missing quote. Preserve
+          # null and add a browser-side direct gold-api fallback. gold-api.com
+          # explicitly supports CORS, so this also survives a backend provider
+          # networking failure without inventing any price.
+          p=Path('index.html'); s=p.read_text(encoding='utf-8')
+          old="""   _spotCacheUSD={gold:Number(data.gold_usd_oz),silver:Number(data.silver_usd_oz),platinum:Number(data.platinum_usd_oz),palladium:Number(data.palladium_usd_oz),eur:Number(data.usd_to_eur),source:data.source||'live spot feed',fxSource:data.fx_source||'FX feed'};
+   _spotCacheAt=Date.now();
+   return _spotCacheUSD;
+ }finally{clearTimeout(timer);} """
+          new="""   const n=v=>(v===null||v===undefined||v==='')?null:Number(v);
+   _spotCacheUSD={gold:n(data.gold_usd_oz),silver:n(data.silver_usd_oz),platinum:n(data.platinum_usd_oz),palladium:n(data.palladium_usd_oz),eur:n(data.usd_to_eur),source:data.source||'live spot feed',fxSource:data.fx_source||'FX feed'};
+   _spotCacheAt=Date.now();
+   return _spotCacheUSD;
+ }catch(backendErr){
+   // Browser-side live fallback: gold-api.com documents CORS support.
+   // FX still comes from CoinBids when available; otherwise use Frankfurter.
+   try{
+     const [rg,rs,rf]=await Promise.all([
+       fetch('https://api.gold-api.com/price/XAU'),
+       fetch('https://api.gold-api.com/price/XAG'),
+       fetch('https://api.frankfurter.app/latest?from=USD&to=EUR')
+     ]);
+     if(!rg.ok||!rs.ok||!rf.ok)throw backendErr;
+     const [dg,ds,df]=await Promise.all([rg.json(),rs.json(),rf.json()]);
+     const gold=Number(dg.price),silver=Number(ds.price),eur=Number(df?.rates?.EUR);
+     if(!(gold>0)||!(silver>0)||!(eur>0))throw backendErr;
+     _spotCacheUSD={gold,silver,platinum:null,palladium:null,eur,source:'gold-api.com live (browser fallback)',fxSource:'Frankfurter'};
+     _spotCacheAt=Date.now();
+     return _spotCacheUSD;
+   }catch(_fallbackErr){throw backendErr;}
+ }finally{clearTimeout(timer);} """
+          if old not in s:
+              raise SystemExit('frontend metal spot block not found')
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+
+      - name: Syntax and regression checks
+        shell: bash
+        run: |
+          python3 -m py_compile numisvault_backend.py
+          grep -q 'Stooq latest daily close' numisvault_backend.py
+          grep -q 'gold-api.com live (browser fallback)' index.html
+          grep -q "const n=v=>(v===null||v===undefined||v==='')?null:Number(v);" index.html
+
+      - name: Commit production fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add numisvault_backend.py index.html
+          if git diff --cached --quiet; then
+            echo 'No changes needed.'
+            exit 0
+          fi
+          git commit -m 'Make metal melt value resilient across spot provider failures'
+          git push origin main
