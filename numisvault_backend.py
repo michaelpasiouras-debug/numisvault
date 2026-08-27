@@ -3134,6 +3134,18 @@ def coin_search():
         if _raw_for_target:
             try:
                 target_identity=resolve_coin_identity(_raw_for_target).get("best")
+                # Canonical resolver output must feed the hard filter even when
+                # the client supplied only coin.raw.
+                if target_identity:
+                    _coin_for_target.setdefault("country", target_identity.get("country"))
+                    _coin_for_target.setdefault("year", target_identity.get("year"))
+                    _resolved_denom=target_identity.get("denomination_value")
+                    if _resolved_denom is not None and not (_coin_for_target.get("denom") or _coin_for_target.get("denomination")):
+                        _coin_for_target["denom"]=_resolved_denom
+                    _resolved_currency=target_identity.get("currency") or target_identity.get("denomination_currency")
+                    if _resolved_currency and not _coin_for_target.get("currency"):
+                        _coin_for_target["currency"]=_resolved_currency
+                    payload["coin"]=_coin_for_target
             except Exception as e:
                 target_identity=None
                 print(f"[resolver] coin-search target identity failed: {type(e).__name__}: {e}")
@@ -3347,7 +3359,11 @@ def coin_search():
         )
     )
 
-    top=valid[:max(1,min(int(payload.get("limit") or 2),2))]
+    # Normal UI remains top-2; QA can explicitly request all validated
+    # evidence so the global cheapest delivered offer is independently provable.
+    _requested_limit=int(payload.get("limit") or 2)
+    _max_public_limit=200 if payload.get("qa_full_evidence") else 2
+    top=valid[:max(1,min(_requested_limit,_max_public_limit))]
     db_matched=sum(1 for o in valid if o.get("shipping_status")=="known_target_db")
     print(
         f"[coin-search] shipping-db matched={db_matched}/{len(valid)} "
@@ -3416,6 +3432,7 @@ def coin_search():
         "note":"The two cheapest validated matching COIN listings found after scanning both normal and cheapest-first MA-Shops search results are shown as purchase anchors. Dealer market value (Auction Intelligence) uses a separate, broader relevance-ranked sample — not only those two lowest asks. Unknown shipping is never treated as free.",
         "shipping_note":f"shipping=null means unknown. shipping_status distinguishes confidence: known_target (item page confirmed your chosen destination, {ship_to_country}), known_target_search (MA-Shops search row explicitly named your chosen destination), known_target_db (matched dealer/destination tier in the local shipping database), known_other_destination (a specific other destination was found — see shipping_destination), known_unconfirmed_destination (a flat rate was found with no destination stated), free (confirmed free), unknown (nothing reliable found).",
         "ship_to_country":ship_to_country,
+        "cheapest_known_delivered":public_offer(next((o for o in valid if o.get("total") is not None), valid[0])) if valid else None,
         "cache":"miss"
     }
     # Only cache genuinely successful lookups — never cache a transient failure
