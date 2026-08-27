@@ -1,0 +1,30 @@
+name: Apply Coin Search Correctness Fix
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'apply_coin_search_correctness_fix.py'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Patch backend
+        run: python apply_coin_search_correctness_fix.py
+      - name: Syntax check
+        run: python -m py_compile numisvault_backend.py
+      - name: Commit backend fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add numisvault_backend.py
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Fix canonical filtering and expose full QA evidence"
+          git push
