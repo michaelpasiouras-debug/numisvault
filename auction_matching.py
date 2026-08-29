@@ -92,25 +92,11 @@ def validate_auction_denomination(target: dict, comp: AuctionComparable) -> bool
 
 
 def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionComparable:
-    """Mutates and returns `comp` with identity_match_score, comparable_tier,
-    match_reasons and grade_distance populated. `target` is a resolved
-    identity dict in the same shape as coin_identity_resolver's `best`
-    (country_code, currency_code, year, denomination_value, issuer,
-    mintmark, variants, catalog_ids).
-
-    The score is normalized over only the fields actually PRESENT/applicable
-    in the target identity — a target with no catalog ID or variant
-    requirement can still reach EXACT on a perfect country+year+denomination
-    (+grade, when relevant) match; it is not artificially capped below the
-    EXACT threshold merely because some optional field wasn't part of this
-    particular identity (same principle as coin_identity_resolver's
-    listing_match_score)."""
     reasons = []
     hard_reject_reasons = []
     applicable_weight = 0
     achieved_weight = 0
 
-    # --- negative product-type terms: hard reject, reuse shared resolver ---
     if _RESOLVER_AVAILABLE:
         neg_text = " ".join(filter(None, [comp.title, comp.description or ""]))
         try:
@@ -123,7 +109,6 @@ def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionCompara
             comp.match_reasons = ["negative product term: " + ",".join(neg)]
             return comp
 
-    # --- hard fields ---
     t_country = target.get("country_code")
     if t_country:
         applicable_weight += WEIGHTS["country"]
@@ -148,7 +133,6 @@ def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionCompara
         else:
             hard_reject_reasons.append("wrong denomination")
 
-    # --- variant ---
     t_variants = set(target.get("variants") or [])
     c_variant = (comp.variant or "").strip().lower()
     if t_variants:
@@ -158,7 +142,6 @@ def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionCompara
         else:
             hard_reject_reasons.append("wrong/uncertain major variant")
 
-    # --- catalog ID ---
     t_catalog = target.get("catalog_ids") or {}
     c_catalog = comp.catalog_ids or {}
     if t_catalog:
@@ -167,21 +150,18 @@ def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionCompara
         if matched_any:
             achieved_weight += WEIGHTS["catalog_id"]; reasons.append("catalog ID exact")
 
-    # --- mint/mintmark ---
     t_mintmark = target.get("mintmark")
     if t_mintmark:
         applicable_weight += WEIGHTS["mintmark"]
         if comp.mintmark and comp.mintmark.upper() == str(t_mintmark).upper():
             achieved_weight += WEIGHTS["mintmark"]; reasons.append("mintmark exact")
 
-    # --- issuer ---
     t_issuer = target.get("issuer")
     if t_issuer:
         applicable_weight += WEIGHTS["issuer"]
         if comp.issuer and t_issuer.lower() in comp.issuer.lower():
             achieved_weight += WEIGHTS["issuer"]; reasons.append("issuer exact")
 
-    # --- grade ---
     comp_grade_info = normalize_grade(comp.grade_raw or "")
     comp.grade_bucket = comp_grade_info["bucket"]
     if not comp.grading_company:
@@ -197,8 +177,21 @@ def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionCompara
         numeric_distance = None
         if t_numeric_grade is not None and c_numeric is not None:
             numeric_distance = abs(int(t_numeric_grade) - int(c_numeric))
+
         bucket_distance = grade_bucket_distance(t_grade_bucket, comp.grade_bucket)
         same_bucket = (t_grade_bucket == comp.grade_bucket)
+
+        # BUG 13: Proof-to-Proof is an exact bucket relationship. If one or
+        # both sides have no explicit PF/PR numeric grade, treat the grade
+        # distance as zero rather than falling into the unknown relationship.
+        if t_grade_bucket == "PROOF" and comp.grade_bucket == "PROOF":
+            same_bucket = True
+            bucket_distance = 0
+            if t_numeric_grade is not None and c_numeric is not None:
+                numeric_distance = abs(int(t_numeric_grade) - int(c_numeric))
+            else:
+                numeric_distance = 0
+
         comp.grade_distance = numeric_distance if numeric_distance is not None else bucket_distance
         gw = grade_weight_for_distance(numeric_distance, bucket_distance, same_bucket)
         comp.grade_weight = gw
@@ -206,34 +199,29 @@ def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionCompara
             achieved_weight += WEIGHTS["grade_exact"]; reasons.append("grade exact")
         elif (numeric_distance is not None and numeric_distance <= 2) or (bucket_distance is not None and bucket_distance <= 1):
             achieved_weight += WEIGHTS["grade_near"]; reasons.append("grade near (±1 band)")
-        # A details/cleaned/damaged coin compared against a straight-grade
-        # target is a material mismatch unless the target is ALSO details.
+
         if comp.grade_bucket == "DETAILS" and t_grade_bucket and t_grade_bucket != "DETAILS":
             hard_reject_reasons.append("details/cleaned coin vs straight-grade target")
-    else:
-        # Target has no grade requirement at all — still compute a bucket for
-        # display, but it never penalizes or inflates the applicable score.
-        pass
 
     if target.get("grading_company"):
         applicable_weight += WEIGHTS["certification"]
         if comp.grading_company and comp.grading_company == target.get("grading_company"):
             achieved_weight += WEIGHTS["certification"]; reasons.append("certification match")
 
-    # --- lot status: unsold/withdrawn/estimate-only never validate as a
-    # comparable sale (spec §46), independent of identity fields.
     if comp.withdrawn:
         hard_reject_reasons.append("withdrawn lot")
     if comp.unsold:
         hard_reject_reasons.append("unsold lot (no hammer)")
-    if comp.effective_price() is None and comp.hammer_price is None and comp.realized_price is None \
-            and not (comp.estimate_low or comp.estimate_high):
+
+    # BUG 14: check for estimate presence explicitly rather than relying on
+    # truthiness, so empty-string leaks cannot masquerade as missing data.
+    has_est = (comp.estimate_low is not None and comp.estimate_low != "") or (comp.estimate_high is not None and comp.estimate_high != "")
+    if comp.effective_price() is None and comp.hammer_price is None and comp.realized_price is None and not has_est:
         hard_reject_reasons.append("no usable price")
 
     comp.match_reasons = reasons + (["REJECT: " + ", ".join(hard_reject_reasons)] if hard_reject_reasons else [])
 
     if hard_reject_reasons:
-        # Still visible in evidence (partial score), but always REJECT tier.
         comp.identity_match_score = int(round(100.0 * achieved_weight / applicable_weight)) if applicable_weight else 0
         comp.identity_match_score = min(comp.identity_match_score, 30)
         comp.comparable_tier = ComparableTier.REJECT.value
