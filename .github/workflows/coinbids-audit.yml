@@ -33,6 +33,7 @@ jobs:
       - name: Apply idempotent verified patches
         run: |
           python apply_coinbids_catalog_fixes.py
+          python apply_drachm_shipping_fix.py
           python apply_multilingual_country_patch.py
 
       - name: Full repository structural audit
