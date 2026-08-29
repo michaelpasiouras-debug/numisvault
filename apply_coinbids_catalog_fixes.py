@@ -2,8 +2,8 @@
 """Apply verified, idempotent CoinBids catalogue/backend fixes.
 
 This script changes only records that match exact country/currency/denomination
-or exact known composition text, plus narrowly-scoped backend text replacements
-whose old/new forms are asserted exactly. It is safe to run repeatedly.
+or exact known composition text, plus narrowly-scoped code replacements whose
+old/new forms are asserted exactly. It is safe to run repeatedly.
 """
 from __future__ import annotations
 
@@ -13,11 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PATH = ROOT / "coin_specs_database_MASTER_EUROPE_v17.json"
 BACKEND_PATH = ROOT / "numisvault_backend.py"
+RESOLVER_PATH = ROOT / "coin_identity_resolver.py"
 
-# Official CBBH decisions:
-# 10F/20F/50F: Decision on issuance/basic features, 1998.
-# 1KM/2KM: Decision on issuance/basic features, 2000.
-# 5F/5KM: Decision on issuance/basic features, 2006.
 BOSNIA = {
     0.05: (2.70, 18.00, "https://cbbh.ba/content/DownloadAttachment/?id=68732829-d3b5-4949-91b4-22140860e813&langTag=bs"),
     0.10: (3.90, 20.00, "https://www.cbbh.ba/content/DownloadAttachment/?id=e009346a-213a-47f4-b78b-e82393907fc6&langTag=en"),
@@ -68,15 +65,9 @@ NEW_SEARCH_CACHE_KEY = '''def _search_cache_key(payload):
     """
     coin=payload.get("coin") or {}
     raw_query=str(payload.get("raw_query") or coin.get("raw") or "").strip().lower()
-
-    # Keep both raw text and structured/canonical identity.  Manual corrections
-    # or resolver-filled fields can legitimately change country/denomination/
-    # year/variant while the visible raw query stays the same.
     parts=["raw="+raw_query]
     for k in ("country","countryEN","denom","denomination","year","variant","grade","theme","currency"):
         parts.append(f"coin.{k}="+str(coin.get(k) or "").strip().lower())
-
-    # Shipping inputs are price-forming inputs, not presentation-only options.
     weight=(payload.get("weight_g") if payload.get("weight_g") is not None else
             payload.get("coin_weight_g") if payload.get("coin_weight_g") is not None else
             payload.get("physical_weight_g"))
@@ -85,8 +76,6 @@ NEW_SEARCH_CACHE_KEY = '''def _search_cache_key(payload):
         "currency="+str(payload.get("currency") or "EUR").upper(),
         "ship_to="+str(payload.get("ship_to") or "").strip().lower(),
         "weight_g="+str(weight if weight is not None else ""),
-        # Response projection: these fields change which/how many offers are
-        # returned even when the underlying market snapshot is identical.
         "limit="+str(int(payload.get("limit") or 2)),
         "sample_limit="+str(int(payload.get("sample_limit") or 10)),
         "qa_full_evidence="+str(bool(payload.get("qa_full_evidence"))),
@@ -94,72 +83,75 @@ NEW_SEARCH_CACHE_KEY = '''def _search_cache_key(payload):
     return "|".join(parts)
 '''
 
+OLD_SUBUNIT_NORMALIZATION = '''            # Canonicalize cent-denominated inputs for EUR/USD so "25 cents"
+            # becomes 0.25 of the major currency unit rather than 25 dollars/euros.
+            if candidate_denom is not None and curcode in ("USD","EUR") and re.search(r"(?<![a-z])cents?(?![a-z])",text,re.I):
+                candidate_denom=candidate_denom/100.0
+'''
 
-def apply_backend_cache_fix() -> int:
-    if not BACKEND_PATH.exists():
-        raise SystemExit("numisvault_backend.py missing; cannot apply cache fix")
-    text=BACKEND_PATH.read_text(encoding="utf-8")
-    if NEW_SEARCH_CACHE_KEY in text:
-        print("Coin-search cache-key fix already present.")
+NEW_SUBUNIT_NORMALIZATION = '''            # Canonicalize decimal subunit inputs into the major currency unit.
+            # 25 cents -> 0.25 USD/EUR; 50 pence -> 0.50 GBP.  Keep this
+            # deliberately scoped to modern decimal currencies with an exact
+            # lexical subunit signal so historical pre-decimal values are not
+            # silently rescaled.
+            _decimal_subunit=(
+                curcode in ("USD","EUR") and re.search(r"(?<![a-z])cents?(?![a-z])",text,re.I)
+            ) or (
+                curcode=="GBP" and re.search(r"(?<![a-z])(?:pence|penn(?:y|ies))(?![a-z])",text,re.I)
+            )
+            if candidate_denom is not None and _decimal_subunit:
+                candidate_denom=candidate_denom/100.0
+'''
+
+
+def exact_patch(path: Path, old: str, new: str, label: str) -> int:
+    if not path.exists():
+        raise SystemExit(f"{path.name} missing; cannot apply {label}")
+    text=path.read_text(encoding="utf-8")
+    if new in text:
+        print(f"{label} already present.")
         return 0
-    if OLD_SEARCH_CACHE_KEY not in text:
-        raise SystemExit("Expected old _search_cache_key block not found; refusing unsafe patch")
-    BACKEND_PATH.write_text(text.replace(OLD_SEARCH_CACHE_KEY,NEW_SEARCH_CACHE_KEY,1),encoding="utf-8")
-    print("Applied coin-search cache-key isolation fix.")
+    if old not in text:
+        raise SystemExit(f"Expected old block for {label} not found; refusing unsafe patch")
+    path.write_text(text.replace(old,new,1),encoding="utf-8")
+    print(f"Applied {label}.")
     return 1
 
 
 def main() -> int:
     data = json.loads(PATH.read_text(encoding="utf-8"))
     changed = 0
-
     for r in data.get("records", []):
         countries = r.get("countries") or []
         if "Bosnia and Herzegovina" in countries and r.get("currency") == "BAM":
-            try:
-                denom = float(r.get("denomination"))
-            except Exception:
-                denom = None
+            try: denom = float(r.get("denomination"))
+            except Exception: denom = None
             if denom in BOSNIA:
                 weight, diameter, source_url = BOSNIA[denom]
-                if r.get("weight_g") != weight:
-                    r["weight_g"] = weight
-                    changed += 1
-                if r.get("diameter_mm") != diameter:
-                    r["diameter_mm"] = diameter
-                    changed += 1
-                if r.get("source_url") != source_url:
-                    r["source_url"] = source_url
-                    changed += 1
-                if r.get("source_priority") != "official":
-                    r["source_priority"] = "official"
-                    changed += 1
+                for key,value in (("weight_g",weight),("diameter_mm",diameter),("source_url",source_url),("source_priority","official")):
+                    if r.get(key)!=value:
+                        r[key]=value;changed+=1
                 if r.get("metal_value_ready") is False:
-                    r["metal_value_ready"] = True
-                    changed += 1
-
+                    r["metal_value_ready"] = True;changed+=1
         comp = str(r.get("composition") or "")
         if comp in FINENESS_BY_COMPOSITION:
             fin = FINENESS_BY_COMPOSITION[comp]
             if r.get("fineness_per_mille") != fin:
-                r["fineness_per_mille"] = fin
-                changed += 1
+                r["fineness_per_mille"] = fin;changed += 1
             if r.get("weight_g") is not None:
                 fine_g = round(float(r["weight_g"]) * fin / 1000.0, 6)
                 if r.get("fine_metal_g") != fine_g:
-                    r["fine_metal_g"] = fine_g
-                    changed += 1
+                    r["fine_metal_g"] = fine_g;changed += 1
             r["metal_value_ready"] = True
-
     if changed:
         PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"Applied {changed} catalogue field updates.")
     else:
         print("Catalogue already contains all verified fixes.")
 
-    apply_backend_cache_fix()
+    exact_patch(BACKEND_PATH,OLD_SEARCH_CACHE_KEY,NEW_SEARCH_CACHE_KEY,"coin-search cache-key isolation fix")
+    exact_patch(RESOLVER_PATH,OLD_SUBUNIT_NORMALIZATION,NEW_SUBUNIT_NORMALIZATION,"GBP pence denomination normalization fix")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
