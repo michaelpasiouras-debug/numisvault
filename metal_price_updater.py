@@ -72,7 +72,8 @@ def fetch_and_update_metal_prices():
 
 def run_demo_mode(metal_name, grams_per_ounce):
     """Λειτουργεί ως δικλείδα ασφαλείας αν δεν υπάρχει σύνδεση ίντερνετ ή API key, χρησιμοποιώντας τις δικές σας τιμές."""
-    mock_ounce_prices = {"silver": 70.00, "gold": 4400.00}
+    # BUG 17: safer realistic demo baseline for silver.
+    mock_ounce_prices = {"silver": 30.00, "gold": 4400.00}
     price_per_ounce = mock_ounce_prices[metal_name]
     price_per_gram = price_per_ounce / grams_per_ounce
     print(f"[💡 DEMO MODE] {metal_name.upper()}: {price_per_ounce:.2f} €/oz -> {price_per_gram:.4f} €/g")
