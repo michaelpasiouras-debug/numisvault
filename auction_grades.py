@@ -21,7 +21,6 @@ _DETAILS_TERMS = ("details", "cleaned", "damaged", "corroded", "holed", "polishe
                    "environmental damage", "improperly cleaned", "scratched")
 
 _WORD_BUCKETS = [
-    # (regex, GradeBucket) — ordered most-specific first.
     (re.compile(r"\bpoor\b|\bfair\b|\bag\b|\babout good\b|\bg-?\d?\b(?!ood)|\bgood\b|\bvg\b|\bvery good\b", re.I), GradeBucket.LOW),
     (re.compile(r"\bfine\b|\bf-?\d{0,2}\b", re.I), GradeBucket.FINE),
     (re.compile(r"\bvf\b|\bvery fine\b", re.I), GradeBucket.VF),
@@ -41,15 +40,8 @@ def _ms_number_to_bucket(n: int) -> GradeBucket:
 
 
 def normalize_grade(raw: str) -> dict:
-    """Returns {"bucket": GradeBucket.value, "grading_company": str|None,
-    "cert_number": str|None, "numeric_grade": int|None, "is_details": bool}.
-
-    Never returns a fabricated numeric grade for a raw/non-certified
-    description — numeric_grade stays None unless the text itself contained
-    an explicit MS/PF number."""
     text = raw or ""
     lower = text.lower()
-
     is_details = any(term in lower for term in _DETAILS_TERMS)
 
     grading_company = None
@@ -80,11 +72,6 @@ def normalize_grade(raw: str) -> dict:
                     break
 
     if is_details and bucket != GradeBucket.UNKNOWN:
-        # A "details"/cleaned/damaged coin is NOT a straight grade of that
-        # tier even if the raw text also mentions e.g. "XF details" — flag it
-        # distinctly so match scoring can penalize it appropriately (spec §8:
-        # "cleaned/damaged details coin versus straight grade when not
-        # adjusted" is a REJECT-tier mismatch unless the target is also details).
         bucket = GradeBucket.DETAILS
 
     return {
@@ -96,18 +83,15 @@ def normalize_grade(raw: str) -> dict:
     }
 
 
-# Ordinal ordering used for grade_distance calculations (spec §9/§13).
+# BUG 7 fix: PROOF participates in the ordinal scale so proof-vs-UNC
+# comparisons do not degrade to an unknown relationship.
 _BUCKET_ORDER = [
     GradeBucket.LOW, GradeBucket.FINE, GradeBucket.VF, GradeBucket.XF, GradeBucket.AU,
-    GradeBucket.UNC_LOW, GradeBucket.UNC_MID, GradeBucket.UNC_HIGH,
+    GradeBucket.UNC_LOW, GradeBucket.UNC_MID, GradeBucket.UNC_HIGH, GradeBucket.PROOF,
 ]
 
 
 def grade_bucket_distance(a: str, b: str) -> "int|None":
-    """Ordinal distance between two grade buckets (0 = identical bucket).
-    Returns None if either bucket is UNKNOWN/DETAILS/PROOF (not placed on the
-    circulated->uncirculated ordinal scale) or not recognized — these need
-    dedicated handling by the caller rather than a fabricated numeric gap."""
     try:
         ia = _BUCKET_ORDER.index(GradeBucket(a))
         ib = _BUCKET_ORDER.index(GradeBucket(b))
@@ -117,9 +101,6 @@ def grade_bucket_distance(a: str, b: str) -> "int|None":
 
 
 def grade_weight_for_distance(numeric_distance: "int|None", bucket_distance: "int|None", same_bucket: bool) -> float:
-    """Spec §13 example weighting. Prefers exact numeric-grade distance when
-    both records have a certified numeric grade; otherwise falls back to
-    bucket-level comparison."""
     if numeric_distance is not None:
         if numeric_distance == 0:
             return 1.00
@@ -131,7 +112,7 @@ def grade_weight_for_distance(numeric_distance: "int|None", bucket_distance: "in
     if same_bucket:
         return 0.70
     if bucket_distance is None:
-        return 0.55  # unknown grade relationship
+        return 0.55
     if bucket_distance == 1:
         return 0.45
     return 0.30
