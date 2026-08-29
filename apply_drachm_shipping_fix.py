@@ -4,7 +4,9 @@
 Idempotent and deliberately narrow:
 - allow the marketplace spelling "drachm" to satisfy a modern drachma target
   without deleting the separate ancient "drachm" denomination;
-- parse shipping text such as "Tax included + 9,00 EUR shipping".
+- parse shipping text such as "Tax included + 9,00 EUR shipping";
+- keep the Greek numismatic country exception from overriding an explicitly
+  conflicting historical issuing authority such as Kreta/Crete.
 """
 from pathlib import Path
 
@@ -45,6 +47,29 @@ NEW_SHIPPING = '''    ship_patterns=[
     ]
 '''
 
+OLD_COUNTRY_EXCEPTION = '''        numismatic_exceptions = [
+            "drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"
+        ]
+        has_exception = any(ex in a for ex in numismatic_exceptions)
+        if not country_in_title(country, a) and not has_exception:
+            return False
+'''
+NEW_COUNTRY_EXCEPTION = '''        numismatic_exceptions = [
+            "drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"
+        ]
+        # The terminology exception is evidence for a Greek coin only when the
+        # title does not explicitly name a conflicting historical issuer. In
+        # particular, a user who typed Greece must not receive Cretan State /
+        # Kreta / Crete issues merely because their title also says Drachmai.
+        conflicting_greek_authority = (
+            canonical_country(country) == "greece"
+            and any(term in a for term in ("kreta", "crete", "cretan state", "cretan"))
+        )
+        has_exception = any(ex in a for ex in numismatic_exceptions) and not conflicting_greek_authority
+        if not country_in_title(country, a) and not has_exception:
+            return False
+'''
+
 
 def replace_once(text: str, old: str, new: str, label: str) -> tuple[str, bool]:
     if new in text:
@@ -64,6 +89,8 @@ def main() -> int:
     text, c = replace_once(text, OLD_DENOM_MATCH, NEW_DENOM_MATCH, "drachma/drachm contextual equivalence")
     changed |= c
     text, c = replace_once(text, OLD_SHIPPING, NEW_SHIPPING, "Tax-included shipping parser")
+    changed |= c
+    text, c = replace_once(text, OLD_COUNTRY_EXCEPTION, NEW_COUNTRY_EXCEPTION, "explicit-country historical-authority guard")
     changed |= c
     if changed:
         BACKEND.write_text(text, encoding="utf-8")
