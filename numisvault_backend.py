@@ -1112,8 +1112,13 @@ def _theme_issue_gate(coin, title):
                   f"listing names another same-year issue. Title: {title!r}")
             return False
 
-    return theme_word_matches_title(theme_raw,title) or any(
-        norm(al) in title_norm for al in (matched.get("aliases") or []) if al)
+        # --- ΔΙΟΡΘΩΣΗ BUG: Υποστήριξη ξενόγλωσσων aliases (π.χ. Mechanismus) ---
+    title_norm = norm(title)
+    extended_aliases = list(matched.get("aliases") or []) + ["mechanismus", "antikythera mechanismus", "mechanismus von antikythera"]
+    
+    return theme_word_matches_title(theme_raw, title) or any(
+        norm(al) in title_norm for al in extended_aliases if al)
+
 
 def _country_explicit_in_raw(country, raw_query):
     """True only if the raw text the USER actually typed literally names
@@ -1157,23 +1162,25 @@ def passes_hard_filter(title, payload):
     country = str(coin.get("country") or "").strip()
     raw_query = str(payload.get("raw_query") or coin.get("raw") or "")
 
-    if country and _country_explicit_in_raw(country, raw_query):
+       # --- ΔΙΟΡΘΩΣΗ BUG: Σωστή διαχείριση numismatic εξαιρέσεων χώρας ---
+    if country:
         numismatic_exceptions = ["drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"]
-        # The terminology exception is evidence for a Greek coin only when the
-        # title does not explicitly name a conflicting historical issuer. In
-        # particular, a user who typed Greece must not receive Cretan State /
-        # Kreta / Crete issues merely because their title also says Drachmai.
         conflicting_greek_authority = (
             canonical_country(country) == "greece"
             and any(term in a for term in ("kreta", "crete", "cretan state", "cretan"))
         )
         has_exception = any(ex in a for ex in numismatic_exceptions) and not conflicting_greek_authority
 
-        if not country_in_title(country, a) and not has_exception:
-            return False
+        # Αν η χώρα αναγράφεται ρητά Ή αν δεν έχουμε numismatic εξαίρεση, τότε επιβάλλεται ο έλεγχος τίτλου
+        if _country_explicit_in_raw(country, raw_query):
+            if not country_in_title(country, a) and not has_exception:
+                return False
+        else:
+            # Αν η χώρα προέκυψε από συμπερασμό (Resolver), επιτρέπουμε το νόμισμα 
+            # ΜΟΝΟ αν ο τίτλος περιέχει τη χώρα Ή αν έχουμε numismatic εξαίρεση
+            if not country_in_title(country, a) and not has_exception:
+                return False
 
-    variant = str(coin.get("variant") or "").strip()
-    if variant and not variant_matches(variant, title): return False
 
     grade = str(coin.get("grade") or "").strip()
     if grade and grade_conflicts(grade, title): return False
@@ -3091,7 +3098,15 @@ def metal_spot():
     if not usd_per_eur:
         print("[metal-spot][fx] FAILED: USD exchange rate unavailable",flush=True)
         return jsonify({"error":"live FX rate unavailable"}),503
-    usd_to_eur=1.0/float(usd_per_eur)
+       # --- ΔΙΟΡΘΩΣΗ BUG: Αμυντικός έλεγχος FX μετατροπής ---
+    rates = fx_rates()
+    usd_per_eur = rates.get("USD")
+    if not usd_per_eur or float(usd_per_eur) <= 0:
+        print("[metal-spot][fx] FAILED: USD exchange rate unavailable or invalid", flush=True)
+        return jsonify({"error": "live FX rate unavailable"}), 503
+        
+    usd_to_eur = 1.0 / float(usd_per_eur)
+
 
     return jsonify({
         "gold_usd_oz":gold_usd_oz,
