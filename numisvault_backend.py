@@ -520,7 +520,7 @@ CURRENCY_UNIT_ALIASES = {
     # so recognizing every common spelling variant (English/German/French/
     # native-plural) is what actually prevents a real, correct match from
     # being silently rejected as "wrong denomination".
-    "drachma":["drachma","drachmas","drachmai","drachmae","drachme","drachmen","drachmi","drakhma","drakhmai","δραχμη","δραχμες","δραχμαι"],
+    "drachma":["drachma","drachmas","drachmai","drachmae","drachme","drachmen","drachmi","drakhma","drakhmai","drachm","δραχμη","δραχμες","δραχμαι"],
     "lira":["lira","lire","liras"],
     "peseta":["peseta","pesetas","ptas"],
     "mark":["mark","marks","deutsche mark","reichsmark","dm"],
@@ -672,7 +672,15 @@ def denomination_matches(target, title):
     candidates=re.findall(r"(?<!\d)(\d+(?:[.,]\d+)?)\s*(" + DENOM_UNIT_ALT + r")(?![a-z])",norm(title),re.I)
     for v,u in candidates:
         d=parse_denomination(f"{v} {u}")
-        if d and abs(d[0]-td[0])<1e-9 and d[1]==td[1]: return True
+        if d and abs(d[0]-td[0])<1e-9:
+            if d[1]==td[1]:
+                return True
+            # Marketplace shorthand: modern Greek "drachma" listings are
+            # sometimes titled "drachm". Treat only this pair as equivalent
+            # at comparison time, without globally collapsing the distinct
+            # ancient "drachm" denomination in the alias table.
+            if {d[1], td[1]} == {"drachma", "drachm"}:
+                return True
     return False
 
 def classify_asset(title):
@@ -1107,32 +1115,52 @@ def _country_explicit_in_raw(country, raw_query):
     return any(norm(al) in rq for al in aliases)
 
 def passes_hard_filter(title, payload):
-    coin=payload.get("coin") or {}
-    a=norm(title)
-    if not a:return False
-    asset,conf=classify_asset(title)
-    if asset in ("BANKNOTE","OTHER"):return False
-    if product_scope(title)!="SINGLE_COIN":return False
-    year=str(coin.get("year") or "").strip()
-    if year and not re.search(rf"(?<!\d){re.escape(year)}(?!\d)",a):return False
-    denom=str(coin.get("denom") or coin.get("denomination") or "").strip()
-    if denom and not denomination_matches(denom,title):return False
-    country=str(coin.get("country") or "").strip()
-    raw_query=str(payload.get("raw_query") or coin.get("raw") or "")
-    if country and _country_explicit_in_raw(country,raw_query) and not country_in_title(country,a):return False
-    variant=str(coin.get("variant") or "").strip()
-    if variant and not variant_matches(variant,title):return False
-    grade=str(coin.get("grade") or "").strip()
-    if grade and grade_conflicts(grade,title):return False
-    if not _theme_issue_gate(coin,title):return False
-    # Coin Intelligence Core: reject explicit non-coin product listings
-    # (banknote/replica/copy/reproduction/medal/token/set/roll/lot/...) as a
-    # second, independent layer alongside classify_asset/product_scope above.
+    coin = payload.get("coin") or {}
+    a = norm(title)
+    if not a: return False
+
+    asset, conf = classify_asset(title)
+    if asset in ("BANKNOTE", "OTHER"): return False
+    if product_scope(title) != "SINGLE_COIN": return False
+
+    year = str(coin.get("year") or "").strip()
+    if year and not re.search(rf"(?<!\d){re.escape(year)}(?!\d)", a): return False
+
+    denom = str(coin.get("denom") or coin.get("denomination") or "").strip()
+    if denom and not denomination_matches(denom, title): return False
+
+    country = str(coin.get("country") or "").strip()
+    raw_query = str(payload.get("raw_query") or coin.get("raw") or "")
+
+    if country and _country_explicit_in_raw(country, raw_query):
+        numismatic_exceptions = ["drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"]
+        # The terminology exception is evidence for a Greek coin only when the
+        # title does not explicitly name a conflicting historical issuer. In
+        # particular, a user who typed Greece must not receive Cretan State /
+        # Kreta / Crete issues merely because their title also says Drachmai.
+        conflicting_greek_authority = (
+            canonical_country(country) == "greece"
+            and any(term in a for term in ("kreta", "crete", "cretan state", "cretan"))
+        )
+        has_exception = any(ex in a for ex in numismatic_exceptions) and not conflicting_greek_authority
+
+        if not country_in_title(country, a) and not has_exception:
+            return False
+
+    variant = str(coin.get("variant") or "").strip()
+    if variant and not variant_matches(variant, title): return False
+
+    grade = str(coin.get("grade") or "").strip()
+    if grade and grade_conflicts(grade, title): return False
+
+    if not _theme_issue_gate(coin, title): return False
+
     if RESOLVER_AVAILABLE:
         try:
-            if get_resolver()._negative_flags(title):return False
+            if get_resolver()._negative_flags(title): return False
         except Exception:
             pass
+
     return True
 
 def score_title(title, payload):
@@ -1236,6 +1264,8 @@ def extract_prices_with_shipping(text, title=""):
     ship_patterns=[
         rf"{ship_word}(?:[^€$£0-9]{{0,60}}){money_seg}",
         rf"\+\s*{money_seg}\s*{ship_word}",
+        # Handles text such as "Tax included + 9,00 EUR shipping".
+        rf"(?:tax included|tax)\s*\+?\s*{money_seg}\s*{ship_word}",
         rf"{money_seg}\s*{ship_word}\s*\(?\s*(?:to\s*)?(?:Greece|Griechenland|Gr[eè]ce|Ελλάδα)",
     ]
     for rxp in ship_patterns:
@@ -2102,19 +2132,37 @@ def local_coin_spec_match(coin):
     return None
 
 def numista_search(query, category="coin", count=12, year=None):
-    if not NUMISTA_API_KEY:return None,"NUMISTA_API_KEY is not configured on the server."
-    params={"q":query,"count":count,"lang":"en"}
-    # Official v3 search accepts year/date; category remains as a compatibility hint.
-    if year:params["year"]=year
-    if category:params["category"]=category
-    r,transport_err=_numista_get_with_backoff(f"{NUMISTA_BASE}/types",params=params,timeout=15)
-    if transport_err:return None,transport_err
-    if r.status_code!=200:return None,f"HTTP {r.status_code}: {r.text[:200]}"
+    if not NUMISTA_API_KEY:
+        return None, "NUMISTA_API_KEY is not configured on the server."
+
+    year_match = re.search(r'\b(1\d{3}|20\d{2})\b', query)
+    clean_query = query
+    params = {"count": count, "lang": "en"}
+
+    if year_match:
+        detected_year = year_match.group(1)
+        params["year"] = detected_year
+        clean_query = query.replace(detected_year, "").strip()
+    elif year:
+        params["year"] = year
+
+    params["q"] = clean_query
+    if category:
+        params["category"] = category
+
+    url = f"{NUMISTA_BASE}/items"
+    r, transport_err = _numista_get_with_backoff(url, params=params, timeout=15)
+    if transport_err:
+        return None, transport_err
+    if r.status_code != 200:
+        return None, f"HTTP {r.status_code}: {r.text[:200]}"
+
     try:
-        data=r.json();types=data.get("types")
-        if types is None and isinstance(data.get("data"),dict):types=data["data"].get("types")
-        return types or [],None
-    except Exception as e:return None,str(e)
+        data = r.json()
+        items = data.get("items") or data.get("types")
+        return items or [], None
+    except Exception as e:
+        return None, str(e)
 
 # ---- Numista caching policy (IMPORTANT — read before changing) -----------
 # Per the Numista API Terms of Use §8.1: "Licensed Data must not be
