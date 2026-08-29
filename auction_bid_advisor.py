@@ -104,8 +104,8 @@ def recommend(all_in: float, ceilings: dict) -> dict:
     strong_buy_cut = value_max * (1 - AUCTION_CONFIG["strong_buy_fraction_of_margin"] * 0.2)
     if all_in <= strong_buy_cut:
         status = "STRONG BUY"
-        pct = (1 - all_in / value_max) * 100 if value_max else 0
-        reason = f"Current all-in is materially ({pct:.0f}%) below the calibrated Value Buy ceiling."
+        pct = ((value_max - all_in) / value_max) * 100 if (value_max and value_max > 0) else 0
+        reason = f"Current all-in is materially ({pct:.0f}%) below the calibrated Value Buy ceiling." if pct > 0 else "Current all-in is exceptionally below the calibrated Value Buy ceiling."
     elif all_in <= value_max:
         status = "BUY"
         pct = (1 - all_in / fair_max) * 100 if fair_max else 0
