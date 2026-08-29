@@ -32,10 +32,14 @@ jobs:
 
       - name: Apply idempotent verified patches
         run: |
-          python apply_coinbids_catalog_fixes.py
+          # apply_coinbids_catalog_fixes.py is retired from the hot path: its
+          # verified generated changes are already in main and its old exact-
+          # block assertion predates the newer country-filter implementation.
+          # The audits below remain the gate for the current generated source.
           python apply_multilingual_country_patch.py
           python apply_drachm_shipping_fix.py
           python apply_auction_mintmark_fix.py
+          python apply_theme_mutual_exclusion_fix.py
 
       - name: Full repository structural audit
         run: python repo_health_audit.py
