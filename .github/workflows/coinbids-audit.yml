@@ -35,6 +35,7 @@ jobs:
           python apply_coinbids_catalog_fixes.py
           python apply_multilingual_country_patch.py
           python apply_drachm_shipping_fix.py
+          python apply_auction_mintmark_fix.py
 
       - name: Full repository structural audit
         run: python repo_health_audit.py
@@ -87,7 +88,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add coin_specs_database_MASTER_EUROPE_v17.json coin_identity_resolver.py numisvault_backend.py index.html
+          git add coin_specs_database_MASTER_EUROPE_v17.json coin_identity_resolver.py numisvault_backend.py index.html auction_matching.py auction_sources.py
           if git diff --cached --quiet; then
             echo 'No generated fixes to commit.'
           else
