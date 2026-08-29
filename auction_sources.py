@@ -45,10 +45,6 @@ class AuctionSourceAdapter:
         raise NotImplementedError
 
 
-# ---------------------------------------------------------------------------
-# ENABLED adapters
-# ---------------------------------------------------------------------------
-
 class ManualComparableAdapter(AuctionSourceAdapter):
     """Structured manual entry: Date | Hammer | Currency | Grade | Auction
     House | URL (spec §7), while still accepting the legacy one-number-per-
@@ -62,10 +58,6 @@ class ManualComparableAdapter(AuctionSourceAdapter):
         return d
 
     def parse_legacy_lines(self, text: str) -> List[AuctionComparable]:
-        """Legacy mode: one bare number per line = one hammer price, currency
-        and semantics unknown-but-assumed-hammer (matches current CoinBids
-        behavior — do not silently change existing Auction Intelligence
-        results for users who keep using the simple textarea)."""
         out = []
         for line in (text or "").splitlines():
             line = line.strip()
@@ -89,10 +81,6 @@ class ManualComparableAdapter(AuctionSourceAdapter):
         return out
 
     def parse_structured_line(self, line: str, default_currency: str = "EUR") -> Optional[AuctionComparable]:
-        """Parses one 'Date | Hammer | Currency | Grade | Auction House | URL'
-        line. Trailing fields are optional — only Hammer is required.
-        Delimiter is '|'; a bare-number-only line is handled by
-        parse_legacy_lines instead, not here."""
         if "|" not in line:
             return None
         parts = [p.strip() for p in line.split("|")]
@@ -122,9 +110,6 @@ class ManualComparableAdapter(AuctionSourceAdapter):
         return comp
 
     def parse(self, text: str, default_currency: str = "EUR") -> List[AuctionComparable]:
-        """Accepts a mix of legacy bare-number lines and structured
-        'Date | Hammer | ...' lines in the same textarea (spec §7: 'Μην
-        σπάσεις το σημερινό απλό textarea')."""
         out = []
         for line in (text or "").splitlines():
             line = line.strip()
@@ -140,9 +125,7 @@ class ManualComparableAdapter(AuctionSourceAdapter):
 
 
 class CSVComparableAdapter(AuctionSourceAdapter):
-    """Structured CSV/XLSX-exported-as-CSV import. Expected header (case-
-    insensitive, order-independent): date, hammer, currency, grade,
-    auction_house, url. Only 'hammer' is required."""
+    """Structured CSV/XLSX-exported-as-CSV import."""
     name = "csv"
     status = SourceStatus.ENABLED_MANUAL
 
@@ -177,13 +160,28 @@ class CSVComparableAdapter(AuctionSourceAdapter):
             except ValueError:
                 hammer = None
             if hammer is None or hammer <= 0:
-                continue  # skip unusable rows rather than crash the whole import
+                continue
             adate = parse_auction_date(get("date")) if get("date") else None
+
             raw_denom = get("denomination_value") or get("denomination")
-            try:
-                denom_value = float(raw_denom.replace(",", ".")) if raw_denom else None
-            except ValueError:
-                denom_value = None
+            denom_value = None
+            if raw_denom:
+                # BUG 12: preserve fractional numismatic denominations such as
+                # 1/2, 1/4 and mixed values such as 2 1/2 during CSV import.
+                raw_denom_clean = raw_denom.replace(",", ".").strip()
+                if "/" in raw_denom_clean:
+                    m_frac = re.search(r"(\d+)?\s*(\d+)/(\d+)", raw_denom_clean)
+                    if m_frac:
+                        wh = float(m_frac.group(1)) if m_frac.group(1) else 0.0
+                        num = float(m_frac.group(2))
+                        den = float(m_frac.group(3))
+                        denom_value = wh + (num / den) if den > 0 else None
+                if denom_value is None:
+                    try:
+                        denom_value = float(raw_denom_clean)
+                    except ValueError:
+                        denom_value = None
+
             raw_year = get("coin_year") or get("year")
             try:
                 coin_year = int(raw_year) if raw_year else None
@@ -220,64 +218,43 @@ class CSVComparableAdapter(AuctionSourceAdapter):
         return out
 
 
-# ---------------------------------------------------------------------------
-# DISABLED adapters — honest stubs, no network access.
-# See auction_source_matrix.md for the researched reasoning behind each.
-# ---------------------------------------------------------------------------
-
 class CoinArchivesAdapter(AuctionSourceAdapter):
     name = "coinarchives"
-    status = SourceStatus.NOT_SUPPORTED  # ToS explicitly prohibits automated harvesting
+    status = SourceStatus.NOT_SUPPORTED
 
     def search(self, identity, filters=None):
         raise NotImplementedError(
-            "CoinArchives automated access is disabled: their Terms of Service "
-            "explicitly prohibit automated harvesting (see auction_source_matrix.md). "
-            "Use manual entry, or obtain an explicit license from CoinArchives, LLC first."
+            "CoinArchives automated access is disabled: their Terms of Service explicitly prohibit automated harvesting."
         )
 
 
 class AcsearchAdapter(AuctionSourceAdapter):
     name = "acsearch"
-    status = SourceStatus.NOT_SUPPORTED  # ToS explicitly prohibits scraping/bots
+    status = SourceStatus.NOT_SUPPORTED
 
     def search(self, identity, filters=None):
         raise NotImplementedError(
-            "acsearch.info automated access is disabled: their Terms of Use "
-            "explicitly forbid web scrapers/robots for systematic data collection "
-            "(see auction_source_matrix.md)."
+            "acsearch.info automated access is disabled: their Terms of Use explicitly forbid web scrapers/robots."
         )
 
 
 class BiddrAdapter(AuctionSourceAdapter):
     name = "biddr"
-    status = SourceStatus.UNDER_REVIEW  # no documented API/permission found
+    status = SourceStatus.UNDER_REVIEW
 
     def search(self, identity, filters=None):
-        raise NotImplementedError(
-            "Biddr automated access is not enabled: no public API or explicit "
-            "automation permission was found. Requires direct outreach to Biddr "
-            "for written permission before enabling (see auction_source_matrix.md)."
-        )
+        raise NotImplementedError("Biddr automated access is not enabled without explicit permission.")
 
 
 class NumisBidsAdapter(AuctionSourceAdapter):
     name = "numisbids"
-    status = SourceStatus.UNDER_REVIEW  # no documented API/permission found
+    status = SourceStatus.UNDER_REVIEW
 
     def search(self, identity, filters=None):
-        raise NotImplementedError(
-            "NumisBids automated access is not enabled: their own content is "
-            "used 'by permission' from individual auction houses, with no "
-            "documented third-party API. Requires direct outreach to NumisBids "
-            "for written permission before enabling (see auction_source_matrix.md)."
-        )
+        raise NotImplementedError("NumisBids automated access is not enabled without explicit permission.")
 
 
 def get_enabled_adapters() -> List[AuctionSourceAdapter]:
-    """Only adapters with an ENABLED_* status are returned — this is the
-    single choke point the rest of the app should use to discover which
-    sources are actually usable right now."""
     all_adapters = [ManualComparableAdapter(), CSVComparableAdapter(),
                      CoinArchivesAdapter(), AcsearchAdapter(), BiddrAdapter(), NumisBidsAdapter()]
     return [a for a in all_adapters if a.status in (SourceStatus.ENABLED_AUTOMATIC, SourceStatus.ENABLED_MANUAL)]
