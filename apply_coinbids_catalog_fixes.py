@@ -103,6 +103,128 @@ NEW_SUBUNIT_NORMALIZATION = '''            # Canonicalize decimal subunit inputs
                 candidate_denom=candidate_denom/100.0
 '''
 
+OLD_NUMISTA_SEARCH = '''def numista_search(query, category="coin", count=12, year=None):
+    if not NUMISTA_API_KEY:return None,"NUMISTA_API_KEY is not configured on the server."
+    params={"q":query,"count":count,"lang":"en"}
+    # Official v3 search accepts year/date; category remains as a compatibility hint.
+    if year:params["year"]=year
+    if category:params["category"]=category
+    r,transport_err=_numista_get_with_backoff(f"{NUMISTA_BASE}/types",params=params,timeout=15)
+    if transport_err:return None,transport_err
+    if r.status_code!=200:return None,f"HTTP {r.status_code}: {r.text[:200]}"
+    try:
+        data=r.json();types=data.get("types")
+        if types is None and isinstance(data.get("data"),dict):types=data["data"].get("types")
+        return types or [],None
+    except Exception as e:return None,str(e)
+'''
+
+NEW_NUMISTA_SEARCH = '''def numista_search(query, category="coin", count=12, year=None):
+    if not NUMISTA_API_KEY:
+        return None, "NUMISTA_API_KEY is not configured on the server."
+
+    year_match = re.search(r'\\b(1\\d{3}|20\\d{2})\\b', query)
+    clean_query = query
+    params = {"count": count, "lang": "en"}
+
+    if year_match:
+        detected_year = year_match.group(1)
+        params["year"] = detected_year
+        clean_query = query.replace(detected_year, "").strip()
+    elif year:
+        params["year"] = year
+
+    params["q"] = clean_query
+    if category:
+        params["category"] = category
+
+    url = f"{NUMISTA_BASE}/items"
+    r, transport_err = _numista_get_with_backoff(url, params=params, timeout=15)
+    if transport_err:
+        return None, transport_err
+    if r.status_code != 200:
+        return None, f"HTTP {r.status_code}: {r.text[:200]}"
+
+    try:
+        data = r.json()
+        items = data.get("items") or data.get("types")
+        return items or [], None
+    except Exception as e:
+        return None, str(e)
+'''
+
+OLD_HARD_FILTER = '''def passes_hard_filter(title, payload):
+    coin=payload.get("coin") or {}
+    a=norm(title)
+    if not a:return False
+    asset,conf=classify_asset(title)
+    if asset in ("BANKNOTE","OTHER"):return False
+    if product_scope(title)!="SINGLE_COIN":return False
+    year=str(coin.get("year") or "").strip()
+    if year and not re.search(rf"(?<!\\d){re.escape(year)}(?!\\d)",a):return False
+    denom=str(coin.get("denom") or coin.get("denomination") or "").strip()
+    if denom and not denomination_matches(denom,title):return False
+    country=str(coin.get("country") or "").strip()
+    raw_query=str(payload.get("raw_query") or coin.get("raw") or "")
+    if country and _country_explicit_in_raw(country,raw_query) and not country_in_title(country,a):return False
+    variant=str(coin.get("variant") or "").strip()
+    if variant and not variant_matches(variant,title):return False
+    grade=str(coin.get("grade") or "").strip()
+    if grade and grade_conflicts(grade,title):return False
+    if not _theme_issue_gate(coin,title):return False
+    # Coin Intelligence Core: reject explicit non-coin product listings
+    # (banknote/replica/copy/reproduction/medal/token/set/roll/lot/...) as a
+    # second, independent layer alongside classify_asset/product_scope above.
+    if RESOLVER_AVAILABLE:
+        try:
+            if get_resolver()._negative_flags(title):return False
+        except Exception:
+            pass
+    return True
+'''
+
+NEW_HARD_FILTER = '''def passes_hard_filter(title, payload):
+    coin = payload.get("coin") or {}
+    a = norm(title)
+    if not a: return False
+
+    asset, conf = classify_asset(title)
+    if asset in ("BANKNOTE", "OTHER"): return False
+    if product_scope(title) != "SINGLE_COIN": return False
+
+    year = str(coin.get("year") or "").strip()
+    if year and not re.search(rf"(?<!\\d){re.escape(year)}(?!\\d)", a): return False
+
+    denom = str(coin.get("denom") or coin.get("denomination") or "").strip()
+    if denom and not denomination_matches(denom, title): return False
+
+    country = str(coin.get("country") or "").strip()
+    raw_query = str(payload.get("raw_query") or coin.get("raw") or "")
+
+    if country and _country_explicit_in_raw(country, raw_query):
+        numismatic_exceptions = ["drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"]
+        has_exception = any(ex in a for ex in numismatic_exceptions)
+
+        if not country_in_title(country, a) and not has_exception:
+            return False
+
+    variant = str(coin.get("variant") or "").strip()
+    if variant and not variant_matches(variant, title): return False
+
+    grade = str(coin.get("grade") or "").strip()
+    if grade and grade_conflicts(grade, title): return False
+
+    if not _theme_issue_gate(coin, title): return False
+
+    if RESOLVER_AVAILABLE:
+        try:
+            if get_resolver()._negative_flags(title): return False
+        except Exception:
+            pass
+
+    return True
+'''
+
 
 def exact_patch(path: Path, old: str, new: str, label: str) -> int:
     if not path.exists():
@@ -151,6 +273,8 @@ def main() -> int:
 
     exact_patch(BACKEND_PATH,OLD_SEARCH_CACHE_KEY,NEW_SEARCH_CACHE_KEY,"coin-search cache-key isolation fix")
     exact_patch(RESOLVER_PATH,OLD_SUBUNIT_NORMALIZATION,NEW_SUBUNIT_NORMALIZATION,"GBP pence denomination normalization fix")
+    exact_patch(BACKEND_PATH,OLD_NUMISTA_SEARCH,NEW_NUMISTA_SEARCH,"Numista /items search and year isolation fix")
+    exact_patch(BACKEND_PATH,OLD_HARD_FILTER,NEW_HARD_FILTER,"Greek numismatic country-filter exception fix")
     return 0
 
 if __name__ == "__main__":
