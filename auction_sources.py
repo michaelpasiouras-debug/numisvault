@@ -148,7 +148,10 @@ class CSVComparableAdapter(AuctionSourceAdapter):
 
     REQUIRED = {"hammer"}
     KNOWN_COLUMNS = {"date", "hammer", "currency", "grade", "auction_house", "url",
-                      "auction_name", "lot_number", "grading_company", "cert_number"}
+                      "auction_name", "lot_number", "grading_company", "cert_number",
+                      "title", "description", "country", "country_code", "currency_code",
+                      "denomination", "denomination_value", "year", "coin_year", "issuer",
+                      "mint", "mintmark", "variant"}
 
     def capabilities(self) -> dict:
         d = super().capabilities()
@@ -176,14 +179,34 @@ class CSVComparableAdapter(AuctionSourceAdapter):
             if hammer is None or hammer <= 0:
                 continue  # skip unusable rows rather than crash the whole import
             adate = parse_auction_date(get("date")) if get("date") else None
+            raw_denom = get("denomination_value") or get("denomination")
+            try:
+                denom_value = float(raw_denom.replace(",", ".")) if raw_denom else None
+            except ValueError:
+                denom_value = None
+            raw_year = get("coin_year") or get("year")
+            try:
+                coin_year = int(raw_year) if raw_year else None
+            except ValueError:
+                coin_year = None
             comp = AuctionComparable(
                 source="csv",
-                title=f"CSV import — {get('auction_house') or 'unknown house'}",
+                title=get("title") or f"CSV import — {get('auction_house') or 'unknown house'}",
+                description=get("description") or None,
                 auction_house=get("auction_house") or None,
                 auction_name=get("auction_name") or None,
                 auction_date=adate.isoformat() if adate else None,
                 lot_number=get("lot_number") or None,
                 source_url=get("url") or None,
+                country=get("country") or None,
+                country_code=(get("country_code") or None),
+                currency_code=(get("currency_code") or None),
+                denomination_value=denom_value,
+                coin_year=coin_year,
+                issuer=get("issuer") or None,
+                mint=get("mint") or None,
+                mintmark=get("mintmark") or None,
+                variant=get("variant") or None,
                 grade_raw=get("grade") or None,
                 grading_company=get("grading_company") or None,
                 cert_number=get("cert_number") or None,

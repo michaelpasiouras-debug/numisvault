@@ -45,6 +45,52 @@ TIER_THRESHOLDS = {
 }
 
 
+_AUCTION_DENOM_ALIASES = {
+    "GRD": ["drachma", "drachmas", "drachmai", "drachmae", "drachme", "drachmen",
+            "drachmi", "drakhma", "drakhmai", "drachm", "δραχμη", "δραχμες", "δραχμαι", "δρχ"],
+    "ITL": ["lira", "lire", "liras", "litl"],
+    "ESP": ["peseta", "pesetas", "pta", "pts", "ptas"],
+    "DEM": ["mark", "marks", "deutsche mark", "reichsmark", "dm", "dmark", "d mark"],
+    "NLG": ["guilder", "guilders", "gulden", "fl", "florin", "nlg"],
+    "ATS": ["schilling", "schillings", "ats"],
+    "FIM": ["markka", "markkaa", "finnmark", "finnmarkka", "fim"],
+}
+
+
+def validate_auction_denomination(target: dict, comp: AuctionComparable) -> bool:
+    """Validate denomination from structured data first, then auction text.
+
+    This intentionally avoids importing numisvault_backend.py because that file
+    already imports auction_matching.py; importing it back here would create a
+    circular dependency.  The text fallback is conservative: exact numeric face
+    value plus an alias associated with the target currency code.
+    """
+    target_value = target.get("denomination_value")
+    if target_value is None:
+        return True
+
+    if comp.denomination_value is not None:
+        try:
+            return abs(float(comp.denomination_value) - float(target_value)) < 1e-9
+        except (TypeError, ValueError):
+            return False
+
+    currency_code = str(target.get("currency_code") or "").upper()
+    aliases = _AUCTION_DENOM_ALIASES.get(currency_code) or []
+    if not aliases:
+        return False
+
+    text = " ".join(filter(None, [comp.title, comp.description or ""])).lower().replace(",", ".")
+    number = f"{float(target_value):g}"
+    for alias in sorted(set(aliases), key=len, reverse=True):
+        if __import__("re").search(
+            rf"(?<!\d){__import__('re').escape(number)}\s*{__import__('re').escape(alias)}(?![a-z])",
+            text, __import__("re").I
+        ):
+            return True
+    return False
+
+
 def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionComparable:
     """Mutates and returns `comp` with identity_match_score, comparable_tier,
     match_reasons and grade_distance populated. `target` is a resolved
@@ -97,7 +143,7 @@ def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionCompara
     t_denom = target.get("denomination_value")
     if t_denom is not None:
         applicable_weight += WEIGHTS["denomination"]
-        if comp.denomination_value is not None and abs(float(comp.denomination_value) - float(t_denom)) < 1e-9:
+        if validate_auction_denomination(target, comp):
             achieved_weight += WEIGHTS["denomination"]; reasons.append("denomination exact")
         else:
             hard_reject_reasons.append("wrong denomination")

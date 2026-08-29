@@ -789,7 +789,12 @@ def make_queries(payload):
             if cn:
                 theme_text=re.sub(rf"(?<![a-z0-9]){re.escape(cn)}(?![a-z0-9])"," ",theme_text,count=1)
         if year:
-            theme_text=re.sub(rf"(?<!\d){re.escape(str(year))}(?!\d)"," ",theme_text)
+            # Remove the year together with an optional mintmark suffix such as
+            # 1876A / 1876-A / 1876 A so it cannot leak into theme_text.
+            theme_text=re.sub(
+                rf"(?<!\d){re.escape(str(year))}(?:\s*[-.]?\s*[A-Za-z]{1,2})?(?![A-Za-z0-9])",
+                " ", theme_text, flags=re.I
+            )
         # Remove denomination numbers and every known unit/currency spelling;
         # leave all other words exactly as normalized so multilingual issue
         # matching can still use them.
@@ -1087,8 +1092,28 @@ def _theme_issue_gate(coin, title):
             matched=iss;break
     if not matched:
         return True
+
+    # Mutual exclusion for same-country / same-denomination / same-year
+    # commemoratives. Once the query identifies one seeded issue, a listing
+    # that explicitly names a DIFFERENT seeded issue from the same candidate
+    # set must be rejected before positive/fuzzy theme matching. This prevents
+    # one commemorative from contaminating another issue's market evidence.
+    title_norm=norm(title)
+    matched_title=norm(matched.get("canonical_title") or "")
+    for other_iss in candidates:
+        if other_iss is matched:
+            continue
+        other_title=norm(other_iss.get("canonical_title") or "")
+        if matched_title and other_title and other_title==matched_title:
+            continue
+        other_pool=[other_iss.get("canonical_title","")]+list(other_iss.get("aliases") or [])
+        if any(al and norm(al) and norm(al) in title_norm for al in other_pool):
+            print(f"[Theme Gate] REJECTED (Wrong Commemorative): "
+                  f"listing names another same-year issue. Title: {title!r}")
+            return False
+
     return theme_word_matches_title(theme_raw,title) or any(
-        norm(al) in norm(title) for al in (matched.get("aliases") or []) if al)
+        norm(al) in title_norm for al in (matched.get("aliases") or []) if al)
 
 def _country_explicit_in_raw(country, raw_query):
     """True only if the raw text the USER actually typed literally names
