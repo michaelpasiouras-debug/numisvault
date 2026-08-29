@@ -30,14 +30,11 @@ jobs:
             pip install Flask flask-cors requests beautifulsoup4
           fi
 
-      - name: Apply idempotent verified patches
+      - name: Apply current verified patches
         run: |
-          # apply_coinbids_catalog_fixes.py is retired from the hot path: its
-          # verified generated changes are already in main and its old exact-
-          # block assertion predates the newer country-filter implementation.
-          # The audits below remain the gate for the current generated source.
-          python apply_multilingual_country_patch.py
-          python apply_drachm_shipping_fix.py
+          # Older catalogue/multilingual/drachm patches are retired from the
+          # hot path because their verified changes are already represented in
+          # the current source and their exact-anchor assertions predate it.
           python apply_auction_mintmark_fix.py
           python apply_theme_mutual_exclusion_fix.py
 
