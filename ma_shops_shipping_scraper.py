@@ -488,10 +488,14 @@ def parse_versandkosten_page(html: str, dealer_slug: str, dealer_name: str,
                         currency = c
                         break
                 # Weight-only free-shipping tables may contain no monetary token
-                # anywhere in the row/header. Since this scraper explicitly
-                # requests curr=EUR, preserve EUR instead of emitting null.
-                if currency is None and "curr=EUR" in source_url:
-                    currency = "EUR"
+                # anywhere in the row/header. Fall back to the explicit `curr=`
+                # query parameter used for this shipping-page request, rather
+                # than emitting a null currency for an otherwise valid zero-cost
+                # shipping tier. EUR remains the conservative default if the
+                # URL has no usable currency parameter.
+                if currency is None:
+                    m_curr = re.search(r"(?:[?&])curr=([A-Za-z]{3})(?:&|$)", source_url or "", re.I)
+                    currency = m_curr.group(1).upper() if m_curr else "EUR"
             else:
                 amount, currency = parse_money(cost_text)
 
