@@ -72,6 +72,7 @@ jobs:
           python test_multilingual_market_matching.py
           python test_raw_only_api_fallback.py
           python test_repeated_price_research.py
+          python test_coin_search_cache_key.py
 
       - name: Coin Search QA benchmark
         run: python test_coin_search_qa.py
