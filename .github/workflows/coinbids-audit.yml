@@ -32,12 +32,11 @@ jobs:
 
       - name: Apply current verified patches
         run: |
-          # Older catalogue/multilingual/drachm/mintmark patches are retired
-          # from the hot path because their verified changes are already
-          # represented in the current source and their exact-anchor assertions
-          # predate the newer implementations. The structural/regression audits
-          # below remain the authoritative gate for those behaviours.
-          python apply_theme_mutual_exclusion_fix.py
+          # Older exact-anchor patches are retired from the hot path once their
+          # verified changes are represented in current source. Structural and
+          # regression audits below are the authoritative gate for those behaviours.
+          # apply_theme_mutual_exclusion_fix.py is retired: its old exact-tail
+          # assertion predates the current _theme_issue_gate implementation.
           python apply_bug_audit_3_5_fix.py
           python apply_shipping_currency_fallback_fix.py
           python apply_frontend_rendering_safety_fix.py
