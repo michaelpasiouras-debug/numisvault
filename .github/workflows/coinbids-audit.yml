@@ -39,6 +39,7 @@ jobs:
           python apply_theme_mutual_exclusion_fix.py
           python apply_bug_audit_3_5_fix.py
           python apply_shipping_currency_fallback_fix.py
+          python apply_frontend_rendering_safety_fix.py
 
       - name: Full repository structural audit
         run: python repo_health_audit.py
