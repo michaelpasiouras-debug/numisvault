@@ -38,14 +38,10 @@ def weighted_quantile(values: Sequence[float], weights: Sequence[float], p: floa
     pairs = sorted(zip(values, weights), key=lambda x: x[0])
     total_weight = sum(w for _, w in pairs)
     if total_weight <= 0:
-        # No usable weight information — fall back to an unweighted quantile
-        # rather than raising or silently returning a wrong number.
         pairs = [(v, 1.0) for v, _ in pairs]
         total_weight = float(len(pairs))
     if len(pairs) == 1:
         return pairs[0][0]
-    # Cumulative weight at the midpoint of each item's weight slice, matching
-    # the common "Hazen"-style weighted-quantile definition.
     cum = 0.0
     cdf_points: List[Tuple[float, float]] = []
     for v, w in pairs:
@@ -64,7 +60,7 @@ def weighted_quantile(values: Sequence[float], weights: Sequence[float], p: floa
                 return v0
             frac = (target - c0) / (c1 - c0)
             return v0 + frac * (v1 - v0)
-    return cdf_points[-1][0]  # pragma: no cover — unreachable given the bounds above
+    return cdf_points[-1][0]
 
 
 def median_absolute_deviation(values: Sequence[float]) -> Tuple[Optional[float], Optional[float]]:
@@ -79,25 +75,25 @@ def median_absolute_deviation(values: Sequence[float]) -> Tuple[Optional[float],
 
 
 def robust_z_scores(values: Sequence[float]) -> List[Optional[float]]:
-    """0.6745 * (x_i - median) / MAD per value, in input order. Returns None
-    per-element when MAD is 0 or undefined (degenerate sample — never divide
-    by zero)."""
+    """0.6745 * (x_i - median) / MAD per value, in input order."""
     med, mad = median_absolute_deviation(values)
     if med is None:
         return [None] * len(values)
-    if not mad or mad <= 0:
-        return [0.0 for _ in values]
+
+    # BUG 6 fix: when MAD collapses to zero but the sample is not constant,
+    # use a conservative numismatic floor so extreme observations do not
+    # become invisible with a synthetic z-score of zero.
+    if mad is None or mad <= 0:
+        if max(values) == min(values):
+            return [0.0 for _ in values]
+        mad = 0.05 * (med if med > 0 else 1.0)
+
     return [0.6745 * (v - med) / mad for v in values]
 
 
 def flag_outliers(values: Sequence[float], threshold: float = None) -> List[Optional[str]]:
     """Returns a list parallel to `values`: None, "OUTLIER_LOW" or
-    "OUTLIER_HIGH" per spec §17. Never used to silently discard data — only
-    to flag it; the caller decides whether to exclude flagged points from a
-    given statistic while still showing them in the evidence view. Below the
-    minimum sample size for a meaningful MAD (spec default n>=5), nothing is
-    flagged — a tiny sample doesn't have enough information to call anything
-    an outlier."""
+    "OUTLIER_HIGH" per spec §17. Never used to silently discard data."""
     threshold = AUCTION_CONFIG["mad_outlier_z_threshold"] if threshold is None else threshold
     if len(values) < AUCTION_CONFIG["mad_min_sample_for_outlier_check"]:
         return [None] * len(values)
@@ -116,10 +112,6 @@ def flag_outliers(values: Sequence[float], threshold: float = None) -> List[Opti
 
 
 def recency_weight(age_days: Optional[int], half_life_days: int = None) -> float:
-    """Exponential decay: 0.5 ** (age_days / half_life_days). Spec §11 — a
-    sale is never hard-discarded for being old, only down-weighted. Missing
-    age is treated as maximally stale (weight -> a small floor) rather than
-    silently full-weight, since we cannot verify recency for it."""
     half_life_days = AUCTION_CONFIG["recency_half_life_days_default"] if half_life_days is None else half_life_days
     if age_days is None:
         return 0.05
@@ -137,8 +129,6 @@ def age_days_between(sale_date: Optional[date], as_of: Optional[date]) -> Option
 
 
 def dispersion_ratio(values: Sequence[float]) -> Optional[float]:
-    """IQR / median as a simple, robust dispersion metric (spec §23).
-    Returns None when fewer than 2 values or median is 0 (undefined ratio)."""
     if len(values) < 2:
         return None
     p25 = weighted_quantile(values, [1.0] * len(values), 0.25)
