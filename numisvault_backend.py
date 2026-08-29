@@ -3054,25 +3054,31 @@ _SEARCH_CACHE_TTL=900  # 15 minutes — MA-Shops listings/prices don't meaningfu
                         # exact same normalized query repeatedly under load.
 
 def _search_cache_key(payload):
+    """Return a cache key for the *exact response contract* of coin-search.
+
+    Search-result caching must separate both market identity inputs and response
+    projection inputs.  A normal UI request (top 2) must never satisfy a QA
+    request (full evidence), and a QA response must never leak back into the UI.
+    Likewise, shipping weight can change dealer shipping tiers and therefore the
+    delivered-price ordering, so it is part of the market identity.
+    """
     coin=payload.get("coin") or {}
-    # Include the raw free-text query / canonical resolved identity, not only
-    # the structured coin fields — otherwise two semantically different raw
-    # queries with an empty or identical structured "coin" object (e.g. both
-    # relying entirely on server-side resolver inference) would collide on
-    # the same cache key and one would silently serve the other's cached
-    # results for up to _SEARCH_CACHE_TTL seconds.
     raw_query=str(payload.get("raw_query") or coin.get("raw") or "").strip().lower()
-    # Price Research and Auction Intelligence are two views of the SAME live
-    # purchase market. Same raw query + destination + currency must share one
-    # snapshot so the canonical dealer anchor cannot contradict itself.
-    if raw_query:
-        parts=[raw_query]
-    else:
-        parts=[str(coin.get(k) or "").strip().lower() for k in
-               ("country","denom","denomination","year","variant","grade")]
-    parts+=[str(bool(payload.get("include_shipping"))),
-            str(payload.get("currency") or "EUR").upper(),
-            str(payload.get("ship_to") or "").strip().lower()]
+    parts=["raw="+raw_query]
+    for k in ("country","countryEN","denom","denomination","year","variant","grade","theme","currency"):
+        parts.append(f"coin.{k}="+str(coin.get(k) or "").strip().lower())
+    weight=(payload.get("weight_g") if payload.get("weight_g") is not None else
+            payload.get("coin_weight_g") if payload.get("coin_weight_g") is not None else
+            payload.get("physical_weight_g"))
+    parts += [
+        "include_shipping="+str(bool(payload.get("include_shipping"))),
+        "currency="+str(payload.get("currency") or "EUR").upper(),
+        "ship_to="+str(payload.get("ship_to") or "").strip().lower(),
+        "weight_g="+str(weight if weight is not None else ""),
+        "limit="+str(int(payload.get("limit") or 2)),
+        "sample_limit="+str(int(payload.get("sample_limit") or 10)),
+        "qa_full_evidence="+str(bool(payload.get("qa_full_evidence"))),
+    ]
     return "|".join(parts)
 
 def _why_rejected(title, payload):

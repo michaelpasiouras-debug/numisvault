@@ -543,9 +543,17 @@ class CoinIdentityResolver:
             c,currency=currency_registry[key]
             curcode=currency["code"]
             candidate_denom=denomination
-            # Canonicalize cent-denominated inputs for EUR/USD so "25 cents"
-            # becomes 0.25 of the major currency unit rather than 25 dollars/euros.
-            if candidate_denom is not None and curcode in ("USD","EUR") and re.search(r"(?<![a-z])cents?(?![a-z])",text,re.I):
+            # Canonicalize decimal subunit inputs into the major currency unit.
+            # 25 cents -> 0.25 USD/EUR; 50 pence -> 0.50 GBP.  Keep this
+            # deliberately scoped to modern decimal currencies with an exact
+            # lexical subunit signal so historical pre-decimal values are not
+            # silently rescaled.
+            _decimal_subunit=(
+                curcode in ("USD","EUR") and re.search(r"(?<![a-z])cents?(?![a-z])",text,re.I)
+            ) or (
+                curcode=="GBP" and re.search(r"(?<![a-z])(?:pence|penn(?:y|ies))(?![a-z])",text,re.I)
+            )
+            if candidate_denom is not None and _decimal_subunit:
                 candidate_denom=candidate_denom/100.0
             sc=.52 + .28*cs
             reasons=["currency match"]
