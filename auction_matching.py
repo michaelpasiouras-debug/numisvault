@@ -208,7 +208,7 @@ def classify_comparable(target: dict, comp: AuctionComparable) -> AuctionCompara
             achieved_weight += WEIGHTS["grade_near"]; reasons.append("grade near (±1 band)")
         # A details/cleaned/damaged coin compared against a straight-grade
         # target is a material mismatch unless the target is ALSO details.
-        if comp.grade_bucket == "DETAILS" and t_grade_bucket != "DETAILS":
+        if comp.grade_bucket == "DETAILS" and t_grade_bucket and t_grade_bucket != "DETAILS":
             hard_reject_reasons.append("details/cleaned coin vs straight-grade target")
     else:
         # Target has no grade requirement at all — still compute a bucket for

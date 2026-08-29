@@ -414,7 +414,7 @@ class CoinIdentityResolver:
         # testing, easily enough to trigger a backend worker timeout. No
         # legitimate coin description needs more than a couple hundred
         # characters, so truncating is safe and does not affect real usage.
-        MAX_INPUT_LENGTH=200
+        MAX_INPUT_LENGTH=500  # Increased to preserve year/theme/variant in long numismatic listings
         original=(raw or "")[:MAX_INPUT_LENGTH]
         # Catalog IDs (KM#123, Y#45, Pick#7, RIC 123...) must be identified and
         # masked out BEFORE year/denomination parsing — otherwise a catalog

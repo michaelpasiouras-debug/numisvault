@@ -361,8 +361,11 @@ def trend(comparables: Sequence[AuctionComparable], as_of: Optional[date] = None
     recent_prices = [p for _, p in dated[mid:]]
     older_med = stats.weighted_median(older_prices, [1.0] * len(older_prices))
     recent_med = stats.weighted_median(recent_prices, [1.0] * len(recent_prices))
-    if not older_med:
-        return {"label": "INSUFFICIENT_DATA", "annualized_change_pct": None, "note": "degenerate older-half median"}
+
+    # Safety guard: never divide by a missing, zero, or negative older-half median.
+    if older_med is None or older_med <= 0:
+        return {"label": "INSUFFICIENT_DATA", "annualized_change_pct": None, "note": "degenerate or zero older-half median"}
+
     change_pct = (recent_med - older_med) / older_med
     years = max(span_days / 365.0, 0.25)
     annualized = change_pct / years
