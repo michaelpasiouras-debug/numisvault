@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Apply verified, idempotent CoinBids catalogue fixes.
+"""Apply verified, idempotent CoinBids catalogue/backend fixes.
 
 This script changes only records that match exact country/currency/denomination
-or exact known composition text. It is safe to run repeatedly.
+or exact known composition text, plus narrowly-scoped backend text replacements
+whose old/new forms are asserted exactly. It is safe to run repeatedly.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PATH = ROOT / "coin_specs_database_MASTER_EUROPE_v17.json"
+BACKEND_PATH = ROOT / "numisvault_backend.py"
 
 # Official CBBH decisions:
 # 10F/20F/50F: Decision on issuance/basic features, 1998.
@@ -31,6 +33,80 @@ FINENESS_BY_COMPOSITION = {
     "Silver alloy (40% Ag minimum)": 400,
     "Silver alloy (40% Ag)": 400,
 }
+
+OLD_SEARCH_CACHE_KEY = '''def _search_cache_key(payload):
+    coin=payload.get("coin") or {}
+    # Include the raw free-text query / canonical resolved identity, not only
+    # the structured coin fields — otherwise two semantically different raw
+    # queries with an empty or identical structured "coin" object (e.g. both
+    # relying entirely on server-side resolver inference) would collide on
+    # the same cache key and one would silently serve the other's cached
+    # results for up to _SEARCH_CACHE_TTL seconds.
+    raw_query=str(payload.get("raw_query") or coin.get("raw") or "").strip().lower()
+    # Price Research and Auction Intelligence are two views of the SAME live
+    # purchase market. Same raw query + destination + currency must share one
+    # snapshot so the canonical dealer anchor cannot contradict itself.
+    if raw_query:
+        parts=[raw_query]
+    else:
+        parts=[str(coin.get(k) or "").strip().lower() for k in
+               ("country","denom","denomination","year","variant","grade")]
+    parts+=[str(bool(payload.get("include_shipping"))),
+            str(payload.get("currency") or "EUR").upper(),
+            str(payload.get("ship_to") or "").strip().lower()]
+    return "|".join(parts)
+'''
+
+NEW_SEARCH_CACHE_KEY = '''def _search_cache_key(payload):
+    """Return a cache key for the *exact response contract* of coin-search.
+
+    Search-result caching must separate both market identity inputs and response
+    projection inputs.  A normal UI request (top 2) must never satisfy a QA
+    request (full evidence), and a QA response must never leak back into the UI.
+    Likewise, shipping weight can change dealer shipping tiers and therefore the
+    delivered-price ordering, so it is part of the market identity.
+    """
+    coin=payload.get("coin") or {}
+    raw_query=str(payload.get("raw_query") or coin.get("raw") or "").strip().lower()
+
+    # Keep both raw text and structured/canonical identity.  Manual corrections
+    # or resolver-filled fields can legitimately change country/denomination/
+    # year/variant while the visible raw query stays the same.
+    parts=["raw="+raw_query]
+    for k in ("country","countryEN","denom","denomination","year","variant","grade","theme","currency"):
+        parts.append(f"coin.{k}="+str(coin.get(k) or "").strip().lower())
+
+    # Shipping inputs are price-forming inputs, not presentation-only options.
+    weight=(payload.get("weight_g") if payload.get("weight_g") is not None else
+            payload.get("coin_weight_g") if payload.get("coin_weight_g") is not None else
+            payload.get("physical_weight_g"))
+    parts += [
+        "include_shipping="+str(bool(payload.get("include_shipping"))),
+        "currency="+str(payload.get("currency") or "EUR").upper(),
+        "ship_to="+str(payload.get("ship_to") or "").strip().lower(),
+        "weight_g="+str(weight if weight is not None else ""),
+        # Response projection: these fields change which/how many offers are
+        # returned even when the underlying market snapshot is identical.
+        "limit="+str(int(payload.get("limit") or 2)),
+        "sample_limit="+str(int(payload.get("sample_limit") or 10)),
+        "qa_full_evidence="+str(bool(payload.get("qa_full_evidence"))),
+    ]
+    return "|".join(parts)
+'''
+
+
+def apply_backend_cache_fix() -> int:
+    if not BACKEND_PATH.exists():
+        raise SystemExit("numisvault_backend.py missing; cannot apply cache fix")
+    text=BACKEND_PATH.read_text(encoding="utf-8")
+    if NEW_SEARCH_CACHE_KEY in text:
+        print("Coin-search cache-key fix already present.")
+        return 0
+    if OLD_SEARCH_CACHE_KEY not in text:
+        raise SystemExit("Expected old _search_cache_key block not found; refusing unsafe patch")
+    BACKEND_PATH.write_text(text.replace(OLD_SEARCH_CACHE_KEY,NEW_SEARCH_CACHE_KEY,1),encoding="utf-8")
+    print("Applied coin-search cache-key isolation fix.")
+    return 1
 
 
 def main() -> int:
@@ -59,8 +135,6 @@ def main() -> int:
                     r["source_priority"] = "official"
                     changed += 1
                 if r.get("metal_value_ready") is False:
-                    # Common-metal/bimetallic records do not need precious-metal
-                    # melt pricing, but their physical spec is now complete.
                     r["metal_value_ready"] = True
                     changed += 1
 
@@ -82,6 +156,8 @@ def main() -> int:
         print(f"Applied {changed} catalogue field updates.")
     else:
         print("Catalogue already contains all verified fixes.")
+
+    apply_backend_cache_fix()
     return 0
 
 
