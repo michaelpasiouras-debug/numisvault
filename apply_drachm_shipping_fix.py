@@ -47,16 +47,15 @@ NEW_SHIPPING = '''    ship_patterns=[
     ]
 '''
 
-OLD_COUNTRY_EXCEPTION = '''        numismatic_exceptions = [
-            "drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"
-        ]
+OLD_COUNTRY_EXCEPTION = '''    if country and _country_explicit_in_raw(country, raw_query):
+        numismatic_exceptions = ["drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"]
         has_exception = any(ex in a for ex in numismatic_exceptions)
+
         if not country_in_title(country, a) and not has_exception:
             return False
 '''
-NEW_COUNTRY_EXCEPTION = '''        numismatic_exceptions = [
-            "drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"
-        ]
+NEW_COUNTRY_EXCEPTION = '''    if country and _country_explicit_in_raw(country, raw_query):
+        numismatic_exceptions = ["drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"]
         # The terminology exception is evidence for a Greek coin only when the
         # title does not explicitly name a conflicting historical issuer. In
         # particular, a user who typed Greece must not receive Cretan State /
@@ -66,6 +65,7 @@ NEW_COUNTRY_EXCEPTION = '''        numismatic_exceptions = [
             and any(term in a for term in ("kreta", "crete", "cretan state", "cretan"))
         )
         has_exception = any(ex in a for ex in numismatic_exceptions) and not conflicting_greek_authority
+
         if not country_in_title(country, a) and not has_exception:
             return False
 '''
