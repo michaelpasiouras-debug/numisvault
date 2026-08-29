@@ -78,6 +78,8 @@ def seller_net_proceeds(expected_hammer: Optional[float], seller_commission_pct:
     insurance = expected_hammer * (insurance_pct / 100.0)
     total_deductions = commission + insurance + photography_fee + listing_fee + other_fixed_fees
     net = expected_hammer - total_deductions
+    effective_net = max(0.0, net)
+    net_pct = (effective_net / expected_hammer) * 100 if (expected_hammer and expected_hammer > 0) else 0.0
     return {
         "expected_hammer": _r(expected_hammer),
         "commission": _r(commission),
@@ -85,7 +87,7 @@ def seller_net_proceeds(expected_hammer: Optional[float], seller_commission_pct:
         "fixed_fees": _r(photography_fee + listing_fee + other_fixed_fees),
         "total_deductions": _r(total_deductions),
         "net_proceeds": _r(net),
-        "net_pct_of_hammer": _r((net / expected_hammer) * 100, 1) if expected_hammer else None,
+        "net_pct_of_hammer": _r(net_pct, 1),
     }
 
 
