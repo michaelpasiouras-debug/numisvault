@@ -225,6 +225,170 @@ NEW_HARD_FILTER = '''def passes_hard_filter(title, payload):
     return True
 '''
 
+# Expanded denomination aliases requested for marketplace spelling/currency-code coverage.
+OLD_CURRENCY_ALIASES = '''CURRENCY_UNIT_ALIASES = {
+    # Modern
+    "euro":["euro","euros","eur","evro","ευρω","ευρώ"],
+    "dollar":["dollar","dollars","usd","dolar","dollaro","δολαριο","δολαρια"],
+    "pound":["pound","pounds","gbp","sterling"],
+    "franc":["franc","francs","franken","frank","frs"],
+    "yen":["yen"],
+    "yuan":["yuan","renminbi"],
+    # Historical / pre-euro European currencies — a coin listing rarely says
+    # "Greece" in a Greek-numismatic term the same way a search query does,
+    # so recognizing every common spelling variant (English/German/French/
+    # native-plural) is what actually prevents a real, correct match from
+    # being silently rejected as "wrong denomination".
+    "drachma":["drachma","drachmas","drachmai","drachmae","drachme","drachmen","drachmi","drakhma","drakhmai","drachm","δραχμη","δραχμες","δραχμαι"],
+    "lira":["lira","lire","liras"],
+    "peseta":["peseta","pesetas","ptas"],
+    "mark":["mark","marks","deutsche mark","reichsmark","dm"],
+    "guilder":["guilder","guilders","gulden"],
+    "schilling":["schilling","schillings"],
+    "markka":["markka","markkaa","finnmark","finnmarkka"],
+    "krona":["krona","kronor","krone","kroner","kronur","krona"],
+    "zloty":["zloty","zlote","zlotych","złoty"],
+    "koruna":["koruna","koruny","korun"],
+    "forint":["forint","forintok"],
+    "leu":["leu","lei"],
+    "lev":["lev","leva"],
+    "kuna":["kuna","kune"],
+    "dinar":["dinar","dinara","dinars"],
+    "litas":["litas","litai","litu"],
+    "lats":["lats","lati","latu"],
+    "kroon":["kroon","krooni"],
+    "ruble":["ruble","rubles","rouble","roubles","rubl","rublei"],
+    "escudo":["escudo","escudos"],
+    "tolar":["tolar","tolarjev","tolarja"],
+    # Minor/subdivision units — kept distinct per currency family so, e.g., a
+    # German pfennig can never accidentally satisfy a search for kopecks.
+    "cent":["cent","cents","centesimo","centesimi","centesimos","céntimo","centimo",
+            "centimos","centime","centimes"],
+    "pfennig":["pfennig","pfennige","pfennigs"],
+    "pence":["penny","pence"],
+    "ore":["öre","ore","øre"],
+    "grosz":["grosz","groszy","grosze"],
+    "filler":["filler","fillér","fillerek"],
+    "haler":["haler","haléř","halere","halierov","halier"],
+    "ban":["ban","bani"],
+    "stotinka":["stotinka","stotinki","stotin"],
+    "lepton":["lepton","lepta","lepto"],
+    "santim":["santim","santims"],
+    "centas":["centas","centai","centu"],
+    "kopeck":["kopeck","kopecks","kopek","kopeks","kopeyka"],
+    "para":["para"],
+    "lipa":["lipa","lipe"],
+    # Pre-decimal / historical denominations — extremely common in actual
+    # numismatic listings, often more so than modern currency for a
+    # collector-focused search. Added on request after finding real gaps.
+    "shilling":["shilling","shillings"],
+    "crown":["crown","crowns"],
+    "farthing":["farthing","farthings"],
+    "sovereign":["sovereign","sovereigns"],
+    "guinea":["guinea","guineas"],
+    "groschen":["groschen","groschens"],
+    "taler":["taler","talers","thaler","thalers"],
+    "kreuzer":["kreuzer","kreutzer"],
+    "real":["real","reales","reais"],
+    "maravedi":["maravedi","maravedis","maravedí"],
+    "soldo":["soldo","soldi"],
+    "scudo":["scudo","scudi"],
+    "baiocco":["baiocco","baiocchi"],
+    "skilling":["skilling","skillingar"],
+    "lek":["lek","leke"],
+    "denar":["denar","denari"],
+    "lari":["lari"],
+    "dram":["dram","drams"],
+    "piastre":["piastre","piastres","kurus","kuruş"],
+    # Ancient Greek / Roman — common on MA-Shops ancient-coin listings.
+    "obol":["obol","obols","obolos","obolus"],
+    "stater":["stater","staters"],
+    "drachm":["drachm","drachms"],
+    "denarius":["denarius","denarii"],
+    "sestertius":["sestertius","sestertii","sesterce"],
+    "solidus":["solidus","solidi"],
+    "tremissis":["tremissis","tremisses"],
+}'''
+
+NEW_CURRENCY_ALIASES = '''CURRENCY_UNIT_ALIASES = {
+    # Modern
+    "euro": ["euro", "euros", "eur", "evro", "ευρω", "ευρώ"],
+    "dollar": ["dollar", "dollars", "usd", "dolar", "dollaro", "δολαριο", "δολαρια"],
+    "pound": ["pound", "pounds", "gbp", "sterling"],
+    "franc": ["franc", "francs", "franken", "frank", "frs"],
+    "yen": ["yen"],
+    "yuan": ["yuan", "renminbi"],
+    # Pre-Euro European currencies
+    "drachma": ["drachma", "drachmas", "drachmai", "drachmae", "drachme", "drachmen", "drachmi", "drakhma", "drakhmai", "drachm", "δραχμη", "δραχμες", "δραχμαι", "δρχ"],
+    "lira": ["lira", "lire", "liras", "litl"],
+    "peseta": ["peseta", "pesetas", "pta", "pts", "ptas"],
+    "mark": ["mark", "marks", "deutsche mark", "reichsmark", "dm", "dmark", "d mark"],
+    "guilder": ["guilder", "guilders", "gulden", "fl", "florin", "nlg"],
+    "schilling": ["schilling", "schillings", "ats"],
+    "markka": ["markka", "markkaa", "finnmark", "finnmarkka", "fim"],
+    "krona": ["krona", "kronor", "krone", "kroner", "kronur", "sek", "nok", "dkk", "isk"],
+    "zloty": ["zloty", "zlote", "zlotych", "złoty", "pln"],
+    "koruna": ["koruna", "koruny", "korun", "czk", "skk"],
+    "forint": ["forint", "forintok", "huf"],
+    "leu": ["leu", "lei", "ron", "rol", "mdl"],
+    "lev": ["lev", "leva", "bgn"],
+    "kuna": ["kuna", "kune", "hrk"],
+    "dinar": ["dinar", "dinara", "dinars", "rsd"],
+    "litas": ["litas", "litai", "litu", "ltl"],
+    "lats": ["lats", "lati", "latu", "lvl"],
+    "kroon": ["kroon", "krooni", "eek"],
+    "ruble": ["ruble", "rubles", "rouble", "roubles", "rubl", "rublei", "rub"],
+    "escudo": ["escudo", "escudos", "pte"],
+    "tolar": ["tolar", "tolarjev", "tolarja", "sit"],
+    # Minor/subdivision units
+    "cent": ["cent", "cents", "centesimo", "centesimi", "centesimos", "céntimo", "centimo", "centimos", "centime", "centimes"],
+    "pfennig": ["pfennig", "pfennige", "pfennigs", "pf"],
+    "pence": ["penny", "pence", "pennies", "p"],
+    "ore": ["öre", "ore", "øre"],
+    "grosz": ["grosz", "groszy", "grosze"],
+    "filler": ["filler", "fillér", "fillerek"],
+    "haler": ["haler", "haléř", "halere", "halierov", "halier"],
+    "ban": ["ban", "bani"],
+    "stotinka": ["stotinka", "stotinki", "stotin"],
+    "lepton": ["lepton", "lepta", "lepto", "λεπτο", "λεπτα", "λεπτό", "λεπτά"],
+    "santim": ["santim", "santims"],
+    "centas": ["centas", "centai", "centu"],
+    "kopeck": ["kopeck", "kopecks", "kopek", "kopeks", "kopeyka"],
+    "para": ["para"],
+    "lipa": ["lipa", "lipe"],
+    # Pre-decimal / historical denominations
+    "shilling": ["shilling", "shillings"],
+    "crown": ["crown", "crowns"],
+    "farthing": ["farthing", "farthings"],
+    "sovereign": ["sovereign", "sovereigns"],
+    "guinea": ["guinea", "guineas"],
+    "groschen": ["groschen", "groschens"],
+    "taler": ["taler", "talers", "thaler", "thalers"],
+    "kreuzer": ["kreuzer", "kreutzer"],
+    "real": ["real", "reales", "reais"],
+    "maravedi": ["maravedi", "maravedis", "maravedí"],
+    "soldo": ["soldo", "soldi"],
+    "scudo": ["scudo", "scudi"],
+    "baiocco": ["baiocco", "baiocchi"],
+    "skilling": ["skilling", "skillingar"],
+    "lek": ["lek", "leke"],
+    "denar": ["denar", "denari"],
+    "lari": ["lari"],
+    "dram": ["dram", "drams"],
+    "piastre": ["piastre", "piastres", "kurus", "kuruş"],
+    # Ancient Greek / Roman
+    "obol": ["obol", "obols", "obolos", "obolus"],
+    "stater": ["stater", "staters"],
+    "drachm": ["drachm", "drachms"],
+    "denarius": ["denarius", "denarii"],
+    "sestertius": ["sestertius", "sestertii", "sesterce"],
+    "solidus": ["solidus", "solidi"],
+    "tremissis": ["tremissis", "tremisses"],
+}'''
+
+OLD_GREECE_CANON = '    "greece":["greece","greek","hellas","ellada","griechenland","griekenland","grèce","grece","grecia","grécia","grecja","recko","řecko","grecko","grécko","grcka","grčka","gorogorszag","görögország","yunanistan","graekenland","grækenland","grekland","kreikka","ελλαδα"],'
+NEW_GREECE_CANON = '    "greece":["greece","greek","hellas","ellada","griechenland","griekenland","grèce","grece","grecia","grécia","grecja","recko","řecko","grecko","grécko","grcka","grčka","gorogorszag","görögország","yunanistan","graekenland","grækenland","grekland","kreikka","crete","κρητη","ελλαδα"],'
+
 
 def exact_patch(path: Path, old: str, new: str, label: str) -> int:
     if not path.exists():
@@ -275,6 +439,8 @@ def main() -> int:
     exact_patch(RESOLVER_PATH,OLD_SUBUNIT_NORMALIZATION,NEW_SUBUNIT_NORMALIZATION,"GBP pence denomination normalization fix")
     exact_patch(BACKEND_PATH,OLD_NUMISTA_SEARCH,NEW_NUMISTA_SEARCH,"Numista /items search and year isolation fix")
     exact_patch(BACKEND_PATH,OLD_HARD_FILTER,NEW_HARD_FILTER,"Greek numismatic country-filter exception fix")
+    exact_patch(BACKEND_PATH,OLD_CURRENCY_ALIASES,NEW_CURRENCY_ALIASES,"expanded European denomination aliases")
+    exact_patch(BACKEND_PATH,OLD_GREECE_CANON,NEW_GREECE_CANON,"Crete aliases in Greece canonical country mapping")
     return 0
 
 if __name__ == "__main__":
