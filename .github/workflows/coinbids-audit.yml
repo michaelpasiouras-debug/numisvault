@@ -40,6 +40,7 @@ jobs:
           python apply_inferred_country_hard_filter_fix.py
           python apply_pdf_regression_fixes.py
           python apply_candidate_funnel_trace_fix.py
+          python apply_mashops_checkpoint_detection_fix.py
 
       - name: Full repository structural audit
         run: python repo_health_audit.py
@@ -77,6 +78,7 @@ jobs:
           [ ! -f test_pdf_regressions.py ] || python test_pdf_regressions.py
           [ ! -f test_candidate_funnel_trace.py ] || python test_candidate_funnel_trace.py
           [ ! -f test_issue_alias_country_query.py ] || python test_issue_alias_country_query.py
+          [ ! -f test_mashops_checkpoint_detection.py ] || python test_mashops_checkpoint_detection.py
           python test_multilingual_country_resolution.py
           python test_multilingual_market_matching.py
           python test_raw_only_api_fallback.py
@@ -95,11 +97,11 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add coin_specs_database.json coin_issue_database.json numisvault_backend.py
+          git add coin_specs_database.json coin_issue_database.json numisvault_backend.py index.html
           if git diff --cached --quiet; then
             echo 'No generated fixes to commit.'
           else
-            git commit -m 'Apply verified CoinBids candidate funnel tracing'
+            git commit -m 'Apply verified MA-Shops checkpoint handling'
             git push
           fi
 
