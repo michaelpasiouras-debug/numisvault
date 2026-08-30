@@ -849,7 +849,12 @@ def make_queries(payload):
                     seen_alias.add(an)
                     if an in raw_n:
                         continue
-                    q=" ".join(x for x in [denom,year,alias] if x)
+                    # Keep country in issue-specific queries. Historical live QA
+                    # proved that MA-Shops returns the Antikythera listing for
+                    # "Greece 10 euro 2022 antikythera mechanism"; dropping the
+                    # country broadens the search unnecessarily and can bury the
+                    # exact issue among unrelated same-denomination results.
+                    q=" ".join(str(x).strip() for x in [country,denom,year,alias] if str(x or "").strip())
                     if q:
                         issue_search_queries.append(q)
                     if len(issue_search_queries)>=3:
