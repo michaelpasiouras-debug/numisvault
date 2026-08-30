@@ -3303,6 +3303,14 @@ def coin_search():
                 print(f"[resolver] coin-search target identity failed: {type(e).__name__}: {e}")
 
     queries=make_queries(payload);all_offers=[];errors=[];used=[]
+    # QA-only candidate-funnel trace. Normal Price Research requests pay only
+    # a couple of boolean/list initializations; detailed evidence is collected
+    # exclusively when qa_full_evidence=true. This is diagnostic metadata only:
+    # it does not participate in filtering, pricing, shipping, ranking or cache
+    # selection.
+    trace_enabled=bool(payload.get("qa_full_evidence"))
+    query_trace=[]
+    candidate_trace=[]
     # Bounded concurrency (max 3 at once) instead of one-at-a-time: this
     # previously ran fully sequentially — up to 8 queries x 2 URLs each (see
     # fetch_search) meant up to 16 real, sequential HTTP round-trips with a
@@ -3324,6 +3332,24 @@ def coin_search():
                 ma_offers,ma_url,ma_err=[],None,str(e)
             if ma_url:used.append({"query":q,"source":"MA-Shops","url":ma_url})
             if ma_err:errors.append({"query":q,"source":"MA-Shops","error":ma_err})
+            if trace_enabled:
+                query_trace.append({
+                    "query":q,
+                    "raw_hits":len(ma_offers),
+                    "search_url":ma_url,
+                    "error":ma_err,
+                    "listings":[{
+                        "title":o.get("title"),"url":o.get("url"),
+                        "raw_price":o.get("price"),"currency":o.get("currency"),
+                        "raw_shipping":o.get("shipping"),
+                        "shipping_status":o.get("shipping_status"),
+                    } for o in ma_offers[:100]],
+                })
+            for o in ma_offers:
+                if trace_enabled:
+                    o.setdefault("_source_queries",[])
+                    if q not in o["_source_queries"]:
+                        o["_source_queries"].append(q)
             all_offers.extend(ma_offers)
             if len(all_offers)>=80:
                 break
@@ -3339,7 +3365,16 @@ def coin_search():
     by={}
     for o in all_offers:
         key=o.get("url") or (o.get("title"),o.get("price"))
-        if key not in by or o.get("_score",0)>by[key].get("_score",0):by[key]=o
+        if key not in by:
+            by[key]=o
+        else:
+            # Preserve query provenance across duplicate hits. Which copy wins
+            # still follows the existing score rule; provenance is QA metadata.
+            merged_queries=list(dict.fromkeys((by[key].get("_source_queries") or []) + (o.get("_source_queries") or [])))
+            if o.get("_score",0)>by[key].get("_score",0):
+                by[key]=o
+            if trace_enabled:
+                by[key]["_source_queries"]=merged_queries
     offers=list(by.values())
     unique_count=len(offers)
     rejected={"asset":0,"scope":0,"identity":0}
@@ -3350,13 +3385,33 @@ def coin_search():
         # complete row when available; other sources fall back to title.
         match_text=o.get("_match_text") or o.get("title","")
         asset,conf=classify_asset(match_text);o["asset_type"]=asset;o["asset_confidence"]=conf
-        if asset in ("BANKNOTE","OTHER"):rejected["asset"]+=1;continue
-        if product_scope(match_text)!="SINGLE_COIN":rejected["scope"]+=1;continue
+        if asset in ("BANKNOTE","OTHER"):
+            rejected["asset"]+=1
+            if trace_enabled:
+                candidate_trace.append({"status":"REJECTED","reason":"ASSET_"+asset,
+                    "title":o.get("title"),"match_text":match_text,"url":o.get("url"),
+                    "queries":o.get("_source_queries") or [],"raw_price":o.get("price"),
+                    "currency":o.get("currency"),"raw_shipping":o.get("shipping")})
+            continue
+        if product_scope(match_text)!="SINGLE_COIN":
+            rejected["scope"]+=1
+            if trace_enabled:
+                candidate_trace.append({"status":"REJECTED","reason":"NOT_SINGLE_COIN",
+                    "title":o.get("title"),"match_text":match_text,"url":o.get("url"),
+                    "queries":o.get("_source_queries") or [],"raw_price":o.get("price"),
+                    "currency":o.get("currency"),"raw_shipping":o.get("shipping")})
+            continue
         if not passes_hard_filter(match_text,payload):
             rejected["identity"]+=1
+            _reject_reason=_why_rejected(match_text,payload)
+            if trace_enabled:
+                candidate_trace.append({"status":"REJECTED","reason":_reject_reason,
+                    "title":o.get("title"),"match_text":match_text,"url":o.get("url"),
+                    "queries":o.get("_source_queries") or [],"raw_price":o.get("price"),
+                    "currency":o.get("currency"),"raw_shipping":o.get("shipping")})
             if _reject_log_budget[0]>0:
                 _reject_log_budget[0]-=1
-                print(f"[coin-search] reject identity reason={_why_rejected(match_text,payload)} title={match_text!r}",flush=True)
+                print(f"[coin-search] reject identity reason={_reject_reason} title={match_text!r}",flush=True)
             continue
         if target_identity:
             try:
@@ -3366,6 +3421,11 @@ def coin_search():
             except Exception:
                 pass
         valid.append(o)
+        if trace_enabled:
+            candidate_trace.append({"status":"ACCEPTED","reason":"HARD_FILTER_PASS",
+                "title":o.get("title"),"match_text":match_text,"url":o.get("url"),
+                "queries":o.get("_source_queries") or [],"raw_price":o.get("price"),
+                "currency":o.get("currency"),"raw_shipping":o.get("shipping")})
     print(f"[coin-search] candidates raw={raw_count} unique={unique_count} valid={len(valid)} rejected={rejected}", flush=True)
     valid_count=len(valid)
 
@@ -3511,6 +3571,34 @@ def coin_search():
         )
     )
 
+    funnel_trace=None
+    if trace_enabled:
+        final_by_url={}
+        for rank,o in enumerate(valid,1):
+            k=o.get("url") or str((o.get("title"),o.get("price")))
+            final_by_url[k]={
+                "final_rank":rank,"normalized_price":o.get("price"),
+                "normalized_currency":o.get("currency"),"shipping":o.get("shipping"),
+                "shipping_status":o.get("shipping_status"),"delivered_total":o.get("total"),
+                "score":o.get("_score"),
+            }
+        for row in candidate_trace:
+            if row.get("status")!="ACCEPTED":
+                continue
+            k=row.get("url") or str((row.get("title"),row.get("raw_price")))
+            row.update(final_by_url.get(k,{}))
+        funnel_trace={
+            "generated_queries":queries,
+            "per_query":query_trace,
+            "candidates":candidate_trace,
+            "winner":({
+                "title":valid[0].get("title"),"url":valid[0].get("url"),
+                "price":valid[0].get("price"),"shipping":valid[0].get("shipping"),
+                "shipping_status":valid[0].get("shipping_status"),"total":valid[0].get("total"),
+                "currency":valid[0].get("currency"),
+            } if valid else None),
+        }
+
     # Normal UI remains top-2; QA can explicitly request all validated
     # evidence so the global cheapest delivered offer is independently provable.
     _requested_limit=int(payload.get("limit") or 2)
@@ -3546,6 +3634,7 @@ def coin_search():
         d.pop("_score",None)
         d.pop("dealer_source",None)
         d.pop("_match_text",None)
+        d.pop("_source_queries",None)
         return d
     top_public=[public_offer(o) for o in top]
     sample_public=[public_offer(o) for o in market_sample]
@@ -3585,6 +3674,7 @@ def coin_search():
         "shipping_note":f"shipping=null means unknown. shipping_status distinguishes confidence: known_target (item page confirmed your chosen destination, {ship_to_country}), known_target_search (MA-Shops search row explicitly named your chosen destination), known_target_db (matched dealer/destination tier in the local shipping database), known_other_destination (a specific other destination was found — see shipping_destination), known_unconfirmed_destination (a flat rate was found with no destination stated), free (confirmed free), unknown (nothing reliable found).",
         "ship_to_country":ship_to_country,
         "cheapest_known_delivered":public_offer(next((o for o in valid if o.get("total") is not None), valid[0])) if valid else None,
+        "funnel_trace":funnel_trace if trace_enabled else None,
         "cache":"miss"
     }
     # Only cache genuinely successful lookups — never cache a transient failure
