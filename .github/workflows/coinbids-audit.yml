@@ -36,6 +36,7 @@ jobs:
           # on the hot path. Older exact-anchor scripts are retired and must not
           # block deployment after their changes have already been absorbed.
           python apply_issue_alias_query_fix.py
+          python apply_issue_alias_country_query_fix.py
           python apply_inferred_country_hard_filter_fix.py
           python apply_pdf_regression_fixes.py
           python apply_candidate_funnel_trace_fix.py
@@ -75,6 +76,7 @@ jobs:
           [ ! -f test_theme_issue_matching.py ] || python test_theme_issue_matching.py
           [ ! -f test_pdf_regressions.py ] || python test_pdf_regressions.py
           [ ! -f test_candidate_funnel_trace.py ] || python test_candidate_funnel_trace.py
+          [ ! -f test_issue_alias_country_query.py ] || python test_issue_alias_country_query.py
           python test_multilingual_country_resolution.py
           python test_multilingual_market_matching.py
           python test_raw_only_api_fallback.py
