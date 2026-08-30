@@ -32,16 +32,12 @@ jobs:
 
       - name: Apply current verified patches
         run: |
-          # Older exact-anchor patches are retired from the hot path once their
-          # verified changes are represented in current source. Structural and
-          # regression audits below are the authoritative gate for those behaviours.
-          # apply_theme_mutual_exclusion_fix.py is retired: its old exact-tail
-          # assertion predates the current _theme_issue_gate implementation.
-          python apply_bug_audit_3_5_fix.py
-          python apply_shipping_currency_fallback_fix.py
-          python apply_frontend_rendering_safety_fix.py
+          # Only idempotent patches that still target the current source remain
+          # on the hot path. Older exact-anchor scripts are retired and must not
+          # block deployment after their changes have already been absorbed.
           python apply_issue_alias_query_fix.py
           python apply_inferred_country_hard_filter_fix.py
+          python apply_pdf_regression_fixes.py
 
       - name: Full repository structural audit
         run: python repo_health_audit.py
@@ -76,6 +72,7 @@ jobs:
           [ ! -f test_resolver_regression.py ] || python test_resolver_regression.py
           [ ! -f test_search_filter_regression.py ] || python test_search_filter_regression.py
           [ ! -f test_theme_issue_matching.py ] || python test_theme_issue_matching.py
+          [ ! -f test_pdf_regressions.py ] || python test_pdf_regressions.py
           python test_multilingual_country_resolution.py
           python test_multilingual_market_matching.py
           python test_raw_only_api_fallback.py
@@ -94,11 +91,11 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add coin_specs_database_MASTER_EUROPE_v17.json coin_identity_resolver.py numisvault_backend.py index.html auction_matching.py auction_sources.py auction_valuation.py ma_shops_shipping_scraper.py
+          git add coin_specs_database.json coin_issue_database.json numisvault_backend.py
           if git diff --cached --quiet; then
             echo 'No generated fixes to commit.'
           else
-            git commit -m 'Apply verified CoinBids audit fixes'
+            git commit -m 'Apply verified CoinBids PDF regression fixes'
             git push
           fi
 
