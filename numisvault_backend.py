@@ -3351,14 +3351,15 @@ def coin_search():
                     if q not in o["_source_queries"]:
                         o["_source_queries"].append(q)
             all_offers.extend(ma_offers)
-            if len(all_offers)>=80:
-                break
+            # IMPORTANT: consume every generated MA-Shops query. Futures finish
+            # out of order, so an early raw-count cutoff can silently discard
+            # the query containing the true cheapest valid listing. Bound each
+            # fetch_search() result instead; never bound correctness globally by
+            # whichever queries happen to finish first.
     finally:
-        # Any query still queued (not yet started, since only 3 run at once)
-        # is cancelled once we have enough offers — already-in-progress
-        # requests are simply left to finish in the background rather than
-        # forcibly killed mid-request.
-        executor.shutdown(wait=False,cancel_futures=True)
+        # Correctness requires every generated query to complete: the cheapest
+        # valid listing may live in any query, regardless of completion order.
+        executor.shutdown(wait=True,cancel_futures=False)
     raw_count=len(all_offers)
     searched_cheapest_first=any("sortby=preis_eur" in str(u.get("url","")) for u in used)
     # Deduplicate by canonical URL.
