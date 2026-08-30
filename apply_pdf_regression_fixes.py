@@ -34,8 +34,6 @@ if not any(crete_key(r) for r in records):
 spec_path.write_text(json.dumps(spec_db, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
 
 # 2) Issue ontology: the two real Vatican 2-euro commemoratives of 2024.
-# This lets the theme gate distinguish them and reject a non-existent
-# "Perugino" 2024 request instead of showing Thomas Aquinas or Marconi.
 issue_path = Path('coin_issue_database.json')
 issue_db = json.loads(issue_path.read_text(encoding='utf-8'))
 issues = issue_db.setdefault('issues', [])
@@ -63,21 +61,38 @@ def ensure_issue(canonical_title, aliases):
 
 ensure_issue(
     'Vatican 2 Euro 2024 — St. Thomas Aquinas',
-    [
-        'thomas aquinas', 'st thomas aquinas', 'saint thomas aquinas',
-        "thomas d'aquin", 'thomas d aquin', 'tommaso d aquino',
-        'san tommaso d aquino', 'doctor angelicus',
-        '750th anniversary of the death of st thomas aquinas',
-    ],
+    ['thomas aquinas', 'st thomas aquinas', 'saint thomas aquinas',
+     "thomas d'aquin", 'thomas d aquin', 'tommaso d aquino',
+     'san tommaso d aquino', 'doctor angelicus',
+     '750th anniversary of the death of st thomas aquinas'],
 )
 ensure_issue(
     'Vatican 2 Euro 2024 — Guglielmo Marconi',
-    [
-        'guglielmo marconi', 'marconi',
-        '150th anniversary of the birth of guglielmo marconi',
-        '150 anniversario nascita guglielmo marconi',
-    ],
+    ['guglielmo marconi', 'marconi',
+     '150th anniversary of the birth of guglielmo marconi',
+     '150 anniversario nascita guglielmo marconi'],
 )
 issue_path.write_text(json.dumps(issue_db, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+# 3) Backend issue gate: Vatican was missing from the bounded country->issue
+# lookup, so the gate returned True before consulting the seeded VA issues.
+# Also, when a user asks for an unknown theme (e.g. Perugino), explicitly
+# named known same-year issues must be rejected rather than leaking through.
+backend_path = Path('numisvault_backend.py')
+src = backend_path.read_text(encoding='utf-8')
+old_map = '_ISSUE_COUNTRY_NAME_TO_CODE={"greece":"GR","ελλαδα":"GR","ελλαs":"GR","hellas":"GR","hellenic republic":"GR"}'
+new_map = '_ISSUE_COUNTRY_NAME_TO_CODE={"greece":"GR","ελλαδα":"GR","ελλαs":"GR","hellas":"GR","hellenic republic":"GR","vatican":"VA","vatican city":"VA","vatican city state":"VA","holy see":"VA"}'
+if old_map in src:
+    src = src.replace(old_map, new_map, 1)
+elif '"vatican":"VA"' not in src:
+    raise SystemExit('Vatican issue-country map anchor not found')
+
+old_unmatched = '''    if not matched:\n        return True\n\n    # Mutual exclusion for same-country / same-denomination / same-year'''
+new_unmatched = '''    if not matched:\n        # The requested theme does not identify any seeded issue. Keep the\n        # generic fallback for unrelated titles, but never accept a listing\n        # that explicitly names a different KNOWN issue sharing this exact\n        # country/denomination/year identity. This is the Perugino/Vatican\n        # regression: Thomas Aquinas and Marconi cannot satisfy Perugino.\n        title_norm=norm(title)\n        for known_iss in candidates:\n            known_pool=[known_iss.get("canonical_title","")]+list(known_iss.get("aliases") or [])\n            if any(al and norm(al) and norm(al) in title_norm for al in known_pool):\n                print(f"[Theme Gate] REJECTED (Unknown requested issue vs known issue): {title!r}")\n                return False\n        return True\n\n    # Mutual exclusion for same-country / same-denomination / same-year'''
+if old_unmatched in src:
+    src = src.replace(old_unmatched, new_unmatched, 1)
+elif 'Unknown requested issue vs known issue' not in src:
+    raise SystemExit('Theme unmatched anchor not found')
+backend_path.write_text(src, encoding='utf-8')
 
 print('PDF regression catalogue/issue fixes applied')
