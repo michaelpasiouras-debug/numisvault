@@ -809,11 +809,62 @@ def make_queries(payload):
         if theme_text:
             coin["theme"]=theme_text
 
+    # ISSUE-ALIAS SEARCH EXPANSION: query MA-Shops in known issue languages
+    # Filtering already understands multilingual aliases, but MA-Shops search itself
+    # is language-sensitive. Without expanding the outgoing query, a cheaper German/
+    # French/Italian listing may never reach passes_hard_filter() at all.
+    issue_search_queries=[]
+    theme_for_issue=str(coin.get("theme") or "").strip()
+    if RESOLVER_AVAILABLE and theme_for_issue:
+        try:
+            issues=(get_resolver().issue_db or {}).get("issues") or []
+            country_n=norm(country)
+            issue_code=next((c for name,c in _ISSUE_COUNTRY_NAME_TO_CODE.items() if name in country_n),None)
+            dm=re.search(r"(\d+(?:\.\d+)?)",str(denom or ""))
+            denom_val=float(dm.group(1)) if dm else None
+            try:
+                year_val=int(year) if year else None
+            except Exception:
+                year_val=None
+            issue_candidates=[iss for iss in issues
+                if (not issue_code or iss.get("country_code")==issue_code)
+                and (denom_val is None or iss.get("denomination_value")==denom_val)
+                and (year_val is None or iss.get("year")==year_val)
+                and iss.get("aliases")]
+            theme_n=norm(theme_for_issue)
+            selected_issue=None
+            for iss in issue_candidates:
+                pool=[iss.get("canonical_title","")]+list(iss.get("aliases") or [])
+                if any(p and (theme_n in norm(p) or norm(p) in theme_n or theme_word_matches_title(theme_for_issue,p)) for p in pool):
+                    selected_issue=iss
+                    break
+            if selected_issue:
+                raw_n=norm(raw)
+                seen_alias=set()
+                for alias in selected_issue.get("aliases") or []:
+                    alias=str(alias or "").strip()
+                    an=norm(alias)
+                    if not alias or not an or an in seen_alias:
+                        continue
+                    seen_alias.add(an)
+                    if an in raw_n:
+                        continue
+                    q=" ".join(x for x in [denom,year,alias] if x)
+                    if q:
+                        issue_search_queries.append(q)
+                    if len(issue_search_queries)>=3:
+                        break
+        except Exception as e:
+            print(f"[issue-query] alias expansion skipped: {type(e).__name__}: {e}",flush=True)
+
     qs = []
     # Exact user wording first. It is usually the highest-information query
     # and MA-Shops' cheapest-first ordering can then surface the cheapest
     # matching candidates immediately.
     if raw: qs.append(raw)
+    # Put issue-specific multilingual aliases ahead of broad resolver/core queries
+    # so cheap foreign-language listings are discovered before the 5-query cap.
+    qs.extend(issue_search_queries)
     qs.extend(resolver_queries)
     core = " ".join(x for x in [country, denom, year] if x)
     if core: qs.append(core)
@@ -1026,7 +1077,7 @@ def theme_match_score(theme_raw, title):
 # just enough to look up coin_issue_database.json's "issues" entries, which
 # currently only use a handful of ISO-style country_code values. Extend this
 # alongside any new issue record that needs it.
-_ISSUE_COUNTRY_NAME_TO_CODE={"greece":"GR","ελλαδα":"GR","ελλαs":"GR","hellas":"GR","hellenic republic":"GR"}
+_ISSUE_COUNTRY_NAME_TO_CODE={"greece":"GR","ελλαδα":"GR","ελλαs":"GR","hellas":"GR","hellenic republic":"GR","vatican":"VA","vatican city":"VA","vatican city state":"VA","holy see":"VA"}
 
 def _theme_issue_gate(coin, title):
     """Multilingual ISSUE/THEME identity gate — separate from, and does not
@@ -1091,6 +1142,17 @@ def _theme_issue_gate(coin, title):
         if any(p and (theme_n in norm(p) or norm(p) in theme_n) for p in pool):
             matched=iss;break
     if not matched:
+        # The requested theme does not identify any seeded issue. Keep the
+        # generic fallback for unrelated titles, but never accept a listing
+        # that explicitly names a different KNOWN issue sharing this exact
+        # country/denomination/year identity. This is the Perugino/Vatican
+        # regression: Thomas Aquinas and Marconi cannot satisfy Perugino.
+        title_norm=norm(title)
+        for known_iss in candidates:
+            known_pool=[known_iss.get("canonical_title","")]+list(known_iss.get("aliases") or [])
+            if any(al and norm(al) and norm(al) in title_norm for al in known_pool):
+                print(f"[Theme Gate] REJECTED (Unknown requested issue vs known issue): {title!r}")
+                return False
         return True
 
     # Mutual exclusion for same-country / same-denomination / same-year
@@ -1162,24 +1224,20 @@ def passes_hard_filter(title, payload):
     country = str(coin.get("country") or "").strip()
     raw_query = str(payload.get("raw_query") or coin.get("raw") or "")
 
-       # --- ΔΙΟΡΘΩΣΗ BUG: Σωστή διαχείριση numismatic εξαιρέσεων χώρας ---
-    if country:
+       # Country is a hard constraint only when the user explicitly supplied it.
+    # A country inferred by the identity resolver is evidence for ranking and
+    # identity resolution, not permission to reject a historically distinct
+    # issuing authority.  Example: raw "5 drachmai 1901" may resolve broadly
+    # to Greece, while valid listings identify the issuer as Crete/Kreta.
+    if country and _country_explicit_in_raw(country, raw_query):
         numismatic_exceptions = ["drachma", "drachmai", "drachmas", "lepta", "george i", "georgios"]
         conflicting_greek_authority = (
             canonical_country(country) == "greece"
             and any(term in a for term in ("kreta", "crete", "cretan state", "cretan"))
         )
         has_exception = any(ex in a for ex in numismatic_exceptions) and not conflicting_greek_authority
-
-        # Αν η χώρα αναγράφεται ρητά Ή αν δεν έχουμε numismatic εξαίρεση, τότε επιβάλλεται ο έλεγχος τίτλου
-        if _country_explicit_in_raw(country, raw_query):
-            if not country_in_title(country, a) and not has_exception:
-                return False
-        else:
-            # Αν η χώρα προέκυψε από συμπερασμό (Resolver), επιτρέπουμε το νόμισμα 
-            # ΜΟΝΟ αν ο τίτλος περιέχει τη χώρα Ή αν έχουμε numismatic εξαίρεση
-            if not country_in_title(country, a) and not has_exception:
-                return False
+        if not country_in_title(country, a) and not has_exception:
+            return False
 
 
     grade = str(coin.get("grade") or "").strip()

@@ -362,6 +362,55 @@
         "archaia ellinini technologia"
       ],
       "confidence_source": "seed_verified_structure"
+    },
+    {
+      "country_code": "VA",
+      "currency_code": "EUR",
+      "denomination_value": 2,
+      "year": 2024,
+      "canonical_title": "Vatican 2 Euro 2024 — St. Thomas Aquinas",
+      "issuer": "Vatican City State",
+      "mint": "IPZS (Italy)",
+      "mintmark": "R",
+      "catalog_ids": {},
+      "variants": [
+        "BU",
+        "Proof"
+      ],
+      "aliases": [
+        "thomas aquinas",
+        "st thomas aquinas",
+        "saint thomas aquinas",
+        "thomas d'aquin",
+        "thomas d aquin",
+        "tommaso d aquino",
+        "san tommaso d aquino",
+        "doctor angelicus",
+        "750th anniversary of the death of st thomas aquinas"
+      ],
+      "confidence_source": "official_vatican_2024_programme"
+    },
+    {
+      "country_code": "VA",
+      "currency_code": "EUR",
+      "denomination_value": 2,
+      "year": 2024,
+      "canonical_title": "Vatican 2 Euro 2024 — Guglielmo Marconi",
+      "issuer": "Vatican City State",
+      "mint": "IPZS (Italy)",
+      "mintmark": "R",
+      "catalog_ids": {},
+      "variants": [
+        "BU",
+        "Proof"
+      ],
+      "aliases": [
+        "guglielmo marconi",
+        "marconi",
+        "150th anniversary of the birth of guglielmo marconi",
+        "150 anniversario nascita guglielmo marconi"
+      ],
+      "confidence_source": "official_vatican_2024_programme"
     }
   ]
 }
