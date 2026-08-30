@@ -1981,6 +1981,29 @@ def mashops_spec_fallback(coin, raw_query=""):
     return None
 
 
+def _is_mashops_checkpoint_html(page_text, final_url=""):
+    """Detect MA-Shops human-verification / WAF checkpoint pages.
+
+    These pages can return HTTP 200, so status-code checks alone are not
+    enough. Treat them as a source-availability failure, never as a parser
+    failure or as evidence that no matching coin exists.
+    """
+    low = str(page_text or "").lower()
+    url_low = str(final_url or "").lower()
+    markers = (
+        "we are verifying that you are a human",
+        "verifying that you are human",
+        "verify that you are human",
+        "checking your browser",
+        "human verification",
+        "creoline checkpoint",
+    )
+    return (
+        "/_creoline/checkpoint" in url_low
+        or ("creoline" in low and "checkpoint" in low)
+        or any(marker in low for marker in markers)
+    )
+
 def fetch_search(query, payload):
     """Fetch the explicit MA-Shops cheapest-first result page.
 
@@ -1997,6 +2020,13 @@ def fetch_search(query, payload):
             print(f"[MA-Shops] GET {url} -> HTTP {r.status_code}, {len(r.text)} chars", flush=True)
             if r.status_code!=200:
                 last_err=f"HTTP {r.status_code}"
+                continue
+            # MA-Shops can return a Creoline human-verification checkpoint
+            # with HTTP 200. Detect it explicitly before parsing so the UI does
+            # not misreport a blocked source as "No exact validated match".
+            if _is_mashops_checkpoint_html(r.text, r.url):
+                last_err="MA-Shops human-verification checkpoint blocked automated search"
+                print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
                 continue
             if "captcha" in r.text.lower() and len(r.text)<200000:
                 last_err="MA-Shops returned a CAPTCHA/anti-bot page"

@@ -1709,7 +1709,9 @@ async function autoResearch(endpoint,t,researchToken){
      if($('rMarketSource')) $('rMarketSource').value='MA-Shops';
      if($('rMarketChecked')) $('rMarketChecked').value=new Date().toLocaleString('el-GR');
    }else{
-     if($('rMarketValue')) $('rMarketValue').value='No exact validated match';
+     const sourceErrors=Array.isArray(data.errors)?data.errors:[];
+     const maBlocked=sourceErrors.some(e=>/human-verification|anti-bot|captcha|checkpoint/i.test(String((e&&e.error)||'')));
+     if($('rMarketValue')) $('rMarketValue').value=maBlocked?'MA-Shops temporarily unavailable':'No exact validated match';
      const diag=data.diagnostics||{};
      const rejects=Array.isArray(diag.cheap_rejections)?diag.cheap_rejections:[];
      const reasonCounts={};
@@ -1721,8 +1723,11 @@ async function autoResearch(endpoint,t,researchToken){
        explanation=`MA-Shops returned ${data.raw_count||diag.raw_candidates_found} candidate listing(s), but none matched all the identity details you explicitly entered.`;
        if(topReasons.length) explanation+=` Main rejection reasons: ${topReasons.join(', ')}.`;
        explanation+=' Check the year/type combination if you expected a result.';
+     }else if(maBlocked){
+       explanation='MA-Shops returned a human-verification / anti-bot checkpoint instead of search results. CoinBids did not receive any listings to validate, so this is a source-availability problem — not evidence that the coin has no matching offers.';
      }else explanation='MA-Shops returned no candidate listings for this exact search.';
-     $('bestPriceBox').innerHTML=`<strong>No exact validated match.</strong><div class="muted" style="margin-top:7px">${esc(explanation)}</div>`;
+     const noMatchTitle=maBlocked?'MA-Shops temporarily unavailable.':'No exact validated match.';
+     $('bestPriceBox').innerHTML=`<strong>${noMatchTitle}</strong><div class="muted" style="margin-top:7px">${esc(explanation)}</div>`;
    }
    renderOffers();
    if(data.note){
