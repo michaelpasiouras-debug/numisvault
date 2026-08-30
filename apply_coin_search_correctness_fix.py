@@ -1,50 +1,36 @@
 from pathlib import Path
 
-p=Path('numisvault_backend.py')
-s=p.read_text(encoding='utf-8')
+p = Path("numisvault_backend.py")
+s = p.read_text(encoding="utf-8")
 
-old='''        if _raw_for_target:
-            try:
-                target_identity=resolve_coin_identity(_raw_for_target).get("best")
-            except Exception as e:
-'''
-new='''        if _raw_for_target:
-            try:
-                target_identity=resolve_coin_identity(_raw_for_target).get("best")
-                # Canonical resolver output must feed the hard filter even when
-                # the client supplied only coin.raw.
-                if target_identity:
-                    _coin_for_target.setdefault("country", target_identity.get("country"))
-                    _coin_for_target.setdefault("year", target_identity.get("year"))
-                    _resolved_denom=target_identity.get("denomination_value")
-                    if _resolved_denom is not None and not (_coin_for_target.get("denom") or _coin_for_target.get("denomination")):
-                        _coin_for_target["denom"]=_resolved_denom
-                    _resolved_currency=target_identity.get("currency") or target_identity.get("denomination_currency")
-                    if _resolved_currency and not _coin_for_target.get("currency"):
-                        _coin_for_target["currency"]=_resolved_currency
-                    payload["coin"]=_coin_for_target
-            except Exception as e:
-'''
-if old not in s: raise SystemExit('resolver enrichment block not found')
-s=s.replace(old,new,1)
-old2='''    top=valid[:max(1,min(int(payload.get("limit") or 2),2))]
-'''
-new2='''    # Normal UI remains top-2; QA can explicitly request all validated
-    # evidence so the global cheapest delivered offer is independently provable.
-    _requested_limit=int(payload.get("limit") or 2)
-    _max_public_limit=200 if payload.get("qa_full_evidence") else 2
-    top=valid[:max(1,min(_requested_limit,_max_public_limit))]
-'''
-if old2 not in s: raise SystemExit('top limit block not found')
-s=s.replace(old2,new2,1)
-old3='''        "ship_to_country":ship_to_country,
-        "cache":"miss"
-'''
-new3='''        "ship_to_country":ship_to_country,
-        "cheapest_known_delivered":public_offer(next((o for o in valid if o.get("total") is not None), valid[0])) if valid else None,
-        "cache":"miss"
-'''
-if old3 not in s: raise SystemExit('result tail block not found')
-s=s.replace(old3,new3,1)
-p.write_text(s,encoding='utf-8')
-print('coin-search correctness patch applied')
+# Correctness fix: never stop collecting query results merely because earlier
+# completed queries already produced 80 raw offers. Futures complete out of
+# order, so that old optimization could cancel a later/broader/cheapest-first
+# query containing the actual cheapest valid listing. That made the final
+# global sort mathematically correct over an incomplete candidate set.
+old = '''            all_offers.extend(ma_offers)\n            if len(all_offers)>=80:\n                break\n'''
+new = '''            all_offers.extend(ma_offers)\n            # IMPORTANT: consume every generated MA-Shops query. Futures finish\n            # out of order, so an early raw-count cutoff can silently discard\n            # the query containing the true cheapest valid listing. Bound each\n            # fetch_search() result instead; never bound correctness globally by\n            # whichever queries happen to finish first.\n'''
+
+if old in s:
+    s = s.replace(old, new, 1)
+elif "if len(all_offers)>=80:" in s:
+    raise SystemExit("unexpected candidate-funnel cutoff shape; refusing blind patch")
+elif "IMPORTANT: consume every generated MA-Shops query" not in s:
+    raise SystemExit("candidate-funnel target not found")
+
+# The executor comment must also reflect the new correctness invariant.
+old_comment = '''        # Any query still queued (not yet started, since only 3 run at once)\n        # is cancelled once we have enough offers — already-in-progress\n        # requests are simply left to finish in the background rather than\n        # forcibly killed mid-request.\n        executor.shutdown(wait=False,cancel_futures=True)\n'''
+new_comment = '''        # Correctness requires every generated query to complete: the cheapest\n        # valid listing may live in any query, regardless of completion order.\n        executor.shutdown(wait=True,cancel_futures=False)\n'''
+if old_comment in s:
+    s = s.replace(old_comment, new_comment, 1)
+elif "executor.shutdown(wait=True,cancel_futures=False)" not in s:
+    raise SystemExit("executor shutdown target not found")
+
+# Structural assertions: this patch must never regress to completion-order
+# truncation, and the QA funnel trace must remain available for diagnosis.
+assert "if len(all_offers)>=80:" not in s
+assert "executor.shutdown(wait=True,cancel_futures=False)" in s
+assert "funnel_trace" in s and "qa_full_evidence" in s
+
+p.write_text(s, encoding="utf-8")
+print("candidate-funnel completeness fix applied")
