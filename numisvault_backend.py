@@ -1999,6 +1999,7 @@ def mashops_spec_fallback(coin, raw_query=""):
             print(f"[MA-Shops specs] item fetch failed: {type(e).__name__}: {e}",flush=True)
             return None
 
+    found_specs=[]
     with ThreadPoolExecutor(max_workers=min(3,len(valid))) as pool:
         futures=[pool.submit(fetch_one,o) for o in valid]
         for fut in as_completed(futures):
@@ -2007,17 +2008,34 @@ def mashops_spec_fallback(coin, raw_query=""):
             except Exception:
                 specs=None
             if specs:
-                cache_mashops_spec(coin,specs)
-                for other in futures:
-                    if other is not fut:
-                        other.cancel()
-                print(
-                    f"[MA-Shops specs] resolved {base_query!r}: "
-                    f"composition={specs.get('composition')} weight_g={specs.get('weight_g')} "
-                    f"fineness={specs.get('fineness_per_mille')} diameter_mm={specs.get('diameter_mm')}",
-                    flush=True
-                )
-                return specs
+                found_specs.append(specs)
+
+    if found_specs:
+        # A page that merely mentions "Silver" is not better evidence than a
+        # later page that explicitly prints Weight + Fineness. Previously the
+        # first partial response won and cancelled the remaining item fetches,
+        # producing exactly "Silver / specifications unavailable" in the UI.
+        # Select one internally consistent page, preferring the fields required
+        # to calculate fine-metal grams; never combine unrelated listings.
+        def completeness(specs):
+            has_weight=specs.get("weight_g") is not None
+            has_fineness=specs.get("fineness_per_mille") is not None
+            has_fine=specs.get("fine_metal_g") is not None
+            return (
+                int(has_weight and has_fineness),
+                int(has_weight)+int(has_fineness)+int(has_fine),
+                int(specs.get("primary_metal") is not None),
+                int(specs.get("diameter_mm") is not None),
+            )
+        specs=max(found_specs,key=completeness)
+        cache_mashops_spec(coin,specs)
+        print(
+            f"[MA-Shops specs] resolved {base_query!r}: "
+            f"composition={specs.get('composition')} weight_g={specs.get('weight_g')} "
+            f"fineness={specs.get('fineness_per_mille')} diameter_mm={specs.get('diameter_mm')}",
+            flush=True
+        )
+        return specs
 
     print(f"[MA-Shops specs] validated listings found but no explicit physical specs for {base_query!r}",flush=True)
     return None
