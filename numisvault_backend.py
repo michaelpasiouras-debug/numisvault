@@ -397,7 +397,10 @@ _GREEK_ACCENT_MAP = str.maketrans({
     "ά":"α","έ":"ε","ή":"η","ί":"ι","ό":"ο","ύ":"υ","ώ":"ω","ϊ":"ι","ϋ":"υ","ΐ":"ι","ΰ":"υ",
 })
 def norm(s):
-    s = (s or "").lower()
+    # Resolver/API fields may be typed numbers (notably denomination_value).
+    # Normalization is a shared boundary used by scoring as well as filtering,
+    # so it must accept scalar values without throwing inside a provider.
+    s = str(s if s is not None else "").lower()
     s = ihtml.unescape(s)
     # Central/Eastern/Northern European diacritics (ł ø é ř š ž etc.) used to
     # fall outside this whitelist and get replaced with a space, silently
@@ -2117,13 +2120,6 @@ def fetch_search(query, payload):
                 last_err="MA-Shops human-verification checkpoint blocked automated search"
                 print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
                 continue
-            # MA-Shops can return a Creoline human-verification checkpoint
-            # with HTTP 200. Detect it explicitly before parsing so the UI does
-            # not misreport a blocked source as "No exact validated match".
-            if _is_mashops_checkpoint_html(r.text, r.url):
-                last_err="MA-Shops human-verification checkpoint blocked automated search"
-                print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
-                continue
             if "captcha" in r.text.lower() and len(r.text)<200000:
                 last_err="MA-Shops returned a CAPTCHA/anti-bot page"
                 print(f"[MA-Shops]   -> looks like a CAPTCHA/anti-bot page", flush=True)
@@ -3432,10 +3428,19 @@ def coin_search():
                 if target_identity:
                     _coin_for_target.setdefault("country", target_identity.get("country"))
                     _coin_for_target.setdefault("year", target_identity.get("year"))
+                    _resolved_currency=target_identity.get("currency") or target_identity.get("denomination_currency")
                     _resolved_denom=target_identity.get("denomination_value")
                     if _resolved_denom is not None and not (_coin_for_target.get("denom") or _coin_for_target.get("denomination")):
-                        _coin_for_target["denom"]=_resolved_denom
-                    _resolved_currency=target_identity.get("currency") or target_identity.get("denomination_currency")
+                        try:
+                            _resolved_value=f"{float(_resolved_denom):g}"
+                        except (TypeError,ValueError):
+                            _resolved_value=str(_resolved_denom).strip()
+                        # Keep the unit with the numeric value. A bare "10.0"
+                        # cannot be safely distinguished from 10 cents/drachma/
+                        # euro by the hard denomination filter.
+                        _coin_for_target["denom"]=" ".join(
+                            x for x in (_resolved_value,str(_resolved_currency or "").strip()) if x
+                        )
                     if _resolved_currency and not _coin_for_target.get("currency"):
                         _coin_for_target["currency"]=_resolved_currency
                     payload["coin"]=_coin_for_target
