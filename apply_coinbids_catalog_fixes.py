@@ -138,7 +138,7 @@ NEW_NUMISTA_SEARCH = '''def numista_search(query, category="coin", count=12, yea
     if category:
         params["category"] = category
 
-    url = f"{NUMISTA_BASE}/items"
+    url = f"{NUMISTA_BASE}/types"
     r, transport_err = _numista_get_with_backoff(url, params=params, timeout=15)
     if transport_err:
         return None, transport_err
