@@ -1873,16 +1873,44 @@ def extract_mashops_physical_specs_from_html(html_text, source_url=None):
 
 
 _MA_SPEC_CACHE = {}
+_MA_CANDIDATE_CACHE = {}
+_MA_CACHE_LOCK = threading.Lock()
+_MA_CANDIDATE_CACHE_TTL = 10 * 60
 
 def _coin_identity_key(coin):
-    return "|".join(str(coin.get(k) or "").strip().lower() for k in ("countryEN","country","denom","year","variant"))
+    # countryEN and country are aliases, not two independent identity fields.
+    # Using both made otherwise identical frontend/backend payloads miss cache.
+    country=coin.get("countryEN") or coin.get("country") or ""
+    denom=coin.get("denom") or coin.get("denomination") or ""
+    return "|".join(str(x or "").strip().lower() for x in (
+        country,denom,coin.get("year"),coin.get("variant")
+    ))
+
+def cache_mashops_candidates(coin, offers):
+    rows=[dict(o) for o in (offers or []) if o.get("url") and o.get("dealer_source")=="MA-Shops"]
+    if not rows:return
+    with _MA_CACHE_LOCK:
+        _MA_CANDIDATE_CACHE[_coin_identity_key(coin)]={"at":time.time(),"offers":rows[:20]}
+
+def cached_mashops_candidates(coin):
+    key=_coin_identity_key(coin)
+    with _MA_CACHE_LOCK:
+        hit=_MA_CANDIDATE_CACHE.get(key)
+        if not hit:return []
+        if time.time()-hit["at"]>=_MA_CANDIDATE_CACHE_TTL:
+            _MA_CANDIDATE_CACHE.pop(key,None)
+            return []
+        return [dict(o) for o in hit["offers"]]
 
 def cache_mashops_spec(coin, spec):
     if spec and any(spec.get(k) is not None for k in ("weight_g","fineness_per_mille","primary_metal","diameter_mm")):
-        _MA_SPEC_CACHE[_coin_identity_key(coin)] = dict(spec)
+        with _MA_CACHE_LOCK:
+            _MA_SPEC_CACHE[_coin_identity_key(coin)] = dict(spec)
 
 def cached_mashops_spec(coin):
-    return _MA_SPEC_CACHE.get(_coin_identity_key(coin))
+    with _MA_CACHE_LOCK:
+        hit=_MA_SPEC_CACHE.get(_coin_identity_key(coin))
+        return dict(hit) if hit else None
 
 def mashops_spec_fallback(coin, raw_query=""):
     """Resolve missing physical specs from identity-validated MA-Shops listings."""
@@ -1907,10 +1935,7 @@ def mashops_spec_fallback(coin, raw_query=""):
     queries=make_queries(payload)[:3] or [base_query]
     valid_by_url={}
 
-    for query in queries:
-        offers,_,err=fetch_search(query,payload)
-        if err and not offers:
-            continue
+    def add_valid_offers(offers):
         for o in offers:
             mt=o.get("_match_text") or o.get("title","")
             asset=classify_asset(mt)[0]
@@ -1923,6 +1948,17 @@ def mashops_spec_fallback(coin, raw_query=""):
             url=o.get("url")
             if url and url not in valid_by_url:
                 valid_by_url[url]=o
+
+    # Reuse the exact candidates already identity-validated by coin_search.
+    # This avoids a second search request racing the first one and being WAF-
+    # blocked even though Price Research has already found the correct listing.
+    add_valid_offers(cached_mashops_candidates(coin))
+    if not valid_by_url:
+        for query in queries:
+            offers,_,err=fetch_search(query,payload)
+            if err and not offers:
+                continue
+            add_valid_offers(offers)
 
     valid=sorted(
         valid_by_url.values(),
@@ -3494,6 +3530,7 @@ def coin_search():
                 "currency":o.get("currency"),"raw_shipping":o.get("shipping")})
     print(f"[coin-search] candidates raw={raw_count} unique={unique_count} valid={len(valid)} rejected={rejected}", flush=True)
     valid_count=len(valid)
+    cache_mashops_candidates(payload.get("coin") or {}, valid)
 
     # ------------------------------------------------------------------
     # RESOURCE-SAFE PRICE / SHIPPING ENRICHMENT
