@@ -2120,6 +2120,13 @@ def fetch_search(query, payload):
                 last_err="MA-Shops human-verification checkpoint blocked automated search"
                 print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
                 continue
+            # MA-Shops can return a Creoline human-verification checkpoint
+            # with HTTP 200. Detect it explicitly before parsing so the UI does
+            # not misreport a blocked source as "No exact validated match".
+            if _is_mashops_checkpoint_html(r.text, r.url):
+                last_err="MA-Shops human-verification checkpoint blocked automated search"
+                print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
+                continue
             if "captcha" in r.text.lower() and len(r.text)<200000:
                 last_err="MA-Shops returned a CAPTCHA/anti-bot page"
                 print(f"[MA-Shops]   -> looks like a CAPTCHA/anti-bot page", flush=True)
