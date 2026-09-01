@@ -27,8 +27,10 @@ def run():
         numeric_qs=b.make_queries(numeric)
         if not numeric_qs: errs.append('numeric denomination produced no queries')
         if not any('10' in q for q in numeric_qs): errs.append(f'numeric denomination missing from queries: {numeric_qs!r}')
+        # Shared scoring/normalization must also tolerate a typed API value.
+        b.score_title('Greece 10 Euro 2022 Antikythera Mechanism',numeric)
     except Exception as e:
-        errs.append(f'numeric resolver denomination crashed make_queries: {type(e).__name__}: {e}')
+        errs.append(f'numeric resolver denomination crashed query/scoring path: {type(e).__name__}: {e}')
     if errs:
         print('FAIL')
         for e in errs: print(' -',e)
