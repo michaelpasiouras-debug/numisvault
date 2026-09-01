@@ -1,6 +1,9 @@
+Warning: truncated output (original token count: 50524)
+Total output lines: 4044
+
 from flask import Flask, request, jsonify, send_from_directory, redirect
 from flask_cors import CORS
-import requests, re, html as ihtml, urllib.parse, time, os, math, threading, json
+import requests, re, html as ihtml, urllib.parse, time, os, math, threading, json, hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
 import email.utils
@@ -2090,50 +2093,7 @@ def fetch_search(query, payload):
             r=SESSION.get(url,timeout=20,allow_redirects=True)
             print(f"[MA-Shops] GET {url} -> HTTP {r.status_code}, {len(r.text)} chars", flush=True)
             if r.status_code!=200:
-                last_err=f"HTTP {r.status_code}"
-                continue
-            # MA-Shops can return a Creoline human-verification checkpoint
-            # with HTTP 200. Detect it explicitly before parsing so the UI does
-            # not misreport a blocked source as "No exact validated match".
-            if _is_mashops_checkpoint_html(r.text, r.url):
-                last_err="MA-Shops human-verification checkpoint blocked automated search"
-                print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
-                continue
-            if "captcha" in r.text.lower() and len(r.text)<200000:
-                last_err="MA-Shops returned a CAPTCHA/anti-bot page"
-                print(f"[MA-Shops]   -> looks like a CAPTCHA/anti-bot page", flush=True)
-                continue
-            soup=BeautifulSoup(r.text,"html.parser")
-            offers=extract_from_jsonld(soup,r.url,payload)
-            offers+=extract_cards(soup,r.url,payload)
-            for o in offers: o["dealer_source"]="MA-Shops"
-            print(f"[MA-Shops]   -> parsed {len(offers)} offer(s)", flush=True)
-            if offers:
-                combined.extend(offers)
-                used_urls.append(r.url)
-            else:
-                last_err="No offer blocks parsed"
-        except Exception as e:
-            last_err=str(e)
-            print(f"[MA-Shops]   -> EXCEPTION: {e}", flush=True)
-    if combined:
-        return combined, " | ".join(used_urls), None
-    return [], None, last_err
-
-def extract_ebay_cards(soup, source_url, payload):
-    offers=[]
-    items = soup.select("li.s-item, div.s-item__wrapper")
-    seen=set()
-    for item in items:
-        link = item.select_one('a.s-item__link, a[href*="/itm/"]')
-        if not link: continue
-        href = link.get("href","")
-        if "/itm/" not in href: continue
-        href = href.split("?")[0]
-        if href in seen: continue
-        title_el = item.select_one(".s-item__title")
-        title = title_el.get_text(" ", strip=True) if title_el else ""
-        if not title or title.strip().lower() in ("shop on ebay","new listing"):
+                last_err=f…524 tokens truncated…p on ebay","new listing"):
             continue
         price_el = item.select_one(".s-item__price")
         if not price_el: continue
@@ -2265,6 +2225,121 @@ def _release_pg_connection(conn):
         try:_PG_POOL.putconn(conn)
         except Exception:pass
 
+_SPEC_CURRENCY_CODES={
+    "euro":"EUR","dollar":"USD","pound":"GBP","franc":"FRF",
+    "drachma":"GRD","drachm":"GRD","mark":"DEM","lira":"ITL",
+    "peseta":"ESP","escudo":"PTE","schilling":"ATS","gulden":"NLG",
+}
+
+def _spec_currency_code(coin):
+    explicit=str(coin.get("currency") or coin.get("currency_code") or "").strip().upper()
+    if explicit and len(explicit)<=4:return explicit
+    parsed=parse_target_denomination(coin.get("denom") or coin.get("denomination") or "")
+    return _SPEC_CURRENCY_CODES.get(parsed[1],"") if parsed else ""
+
+def _spec_is_sufficient(spec):
+    """Whether a database hit can satisfy Metal Intelligence without I/O."""
+    if not spec:return False
+    composition=str(spec.get("composition") or "").strip()
+    metal=str(spec.get("primary_metal") or composition).lower()
+    if not composition:return False
+    precious=any(x in metal for x in ("silver","gold","platinum","palladium"))
+    if not precious:return True
+    return spec.get("weight_g") is not None and spec.get("fineness_per_mille") is not None
+
+def persist_mashops_spec(coin,spec):
+    """Upsert one identity-validated MA-Shops physical specification.
+
+    This is deliberately best-effort: a database outage must never turn a
+    successful user lookup into an HTTP 500. The stable identity key makes
+    repeated searches idempotent, while provenance rows retain the exact
+    listing URL used as evidence.
+    """
+    if not DATABASE_URL or not spec:return False
+    country=str(coin.get("countryEN") or coin.get("country") or "").strip()
+    denom_label=str(coin.get("denom") or coin.get("denomination") or "").strip()
+    denom_value=_spec_denom_value(denom_label)
+    try:year=int(str(coin.get("year") or "").strip())
+    except Exception:year=None
+    variant=str(coin.get("variant") or coin.get("theme") or "").strip()
+    if not country or denom_value is None or year is None:return False
+    if not any(spec.get(k) is not None for k in (
+        "composition","primary_metal","fineness_per_mille","weight_g","diameter_mm"
+    )):return False
+
+    currency_code=_spec_currency_code(coin)
+    identity="|".join(str(x or "").strip().lower() for x in (
+        "mashops",country,currency_code,denom_value,year,variant
+    ))
+    record_id=hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
+    composition=spec.get("composition")
+    primary_metal=spec.get("primary_metal")
+    fineness=spec.get("fineness_per_mille")
+    weight=spec.get("weight_g")
+    diameter=spec.get("diameter_mm")
+    fine_g=spec.get("fine_metal_g")
+    ready=(weight is not None and fineness is not None and primary_metal is not None)
+    source_url=str(spec.get("source_url") or spec.get("url") or "").strip()
+    title=str(spec.get("title") or spec.get("spec_source_title") or denom_label).strip()
+
+    conn=_get_pg_connection()
+    if conn is None:return False
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into coin_specs (
+                        record_id,country_code,country,currency_code,
+                        denomination_value,denomination_label,year_from,year_to,
+                        issue_year,coin_type,variant,title,composition_text,
+                        primary_metal,fineness_per_mille,weight_g,diameter_mm,
+                        fine_metal_g,source_priority,confidence,verified,metal_value_ready
+                    ) values (
+                        %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+                    )
+                    on conflict (record_id) do update set
+                        title=coalesce(excluded.title,coin_specs.title),
+                        composition_text=coalesce(excluded.composition_text,coin_specs.composition_text),
+                        primary_metal=coalesce(excluded.primary_metal,coin_specs.primary_metal),
+                        fineness_per_mille=coalesce(excluded.fineness_per_mille,coin_specs.fineness_per_mille),
+                        weight_g=coalesce(excluded.weight_g,coin_specs.weight_g),
+                        diameter_mm=coalesce(excluded.diameter_mm,coin_specs.diameter_mm),
+                        fine_metal_g=coalesce(excluded.fine_metal_g,coin_specs.fine_metal_g),
+                        confidence=greatest(coin_specs.confidence,excluded.confidence),
+                        verified=coin_specs.verified or excluded.verified,
+                        metal_value_ready=coin_specs.metal_value_ready or excluded.metal_value_ready
+                    returning id
+                    """,
+                    (record_id,"",country,currency_code,denom_value,denom_label,
+                     year,year,year,"commemorative" if variant else "circulation",
+                     variant or None,title or None,composition,primary_metal,fineness,
+                     weight,diameter,fine_g,55,0.88,True,ready),
+                )
+                spec_id=cur.fetchone()[0]
+                if source_url:
+                    cur.execute(
+                        "select 1 from coin_spec_sources where coin_spec_id=%s and source_url=%s limit 1",
+                        (spec_id,source_url),
+                    )
+                    if not cur.fetchone():
+                        cur.execute(
+                            """insert into coin_spec_sources
+                               (coin_spec_id,source_name,source_url,source_type,source_license,retrieved_at,note)
+                               values (%s,%s,%s,%s,%s,now(),%s)""",
+                            (spec_id,"MA-Shops",source_url,"validated_dealer_listing",None,
+                             "Identity-validated listing with explicit physical specifications"),
+                        )
+        print(f"[coin-specs-pg] persisted MA-Shops spec record_id={record_id}",flush=True)
+        return True
+    except Exception as e:
+        try:conn.rollback()
+        except Exception:pass
+        print(f"[coin-specs-pg] MA-Shops upsert failed: {type(e).__name__}: {e}",flush=True)
+        return False
+    finally:
+        _release_pg_connection(conn)
+
 def pg_coin_spec_match(coin):
     if not DATABASE_URL:return None
     country=str(coin.get("countryEN") or coin.get("country") or "").strip()
@@ -2280,24 +2355,35 @@ def pg_coin_spec_match(coin):
             cur.execute(
                 """
                 select country,currency_code,denomination_value,composition_text,
-                       weight_g,diameter_mm,confidence,source_priority,verified
+                       primary_metal,fineness_per_mille,weight_g,diameter_mm,
+                       fine_metal_g,confidence,source_priority,verified,variant
                 from coin_specs
                 where lower(country)=lower(%s)
                   and abs(denomination_value-%s)<0.0001
                   and (year_from is null or %s is null or %s>=year_from)
                   and (year_to is null or %s is null or %s<=year_to)
-                order by source_priority desc, confidence desc
+                  and (%s='' or coalesce(variant,'')='' or lower(variant)=lower(%s))
+                order by
+                  case when lower(coalesce(variant,''))=lower(%s) then 1 else 0 end desc,
+                  source_priority desc, confidence desc
                 limit 1
                 """,
-                (country,denom,year,year,year,year),
+                (country,denom,year,year,year,year,
+                 str(coin.get("variant") or coin.get("theme") or "").strip(),
+                 str(coin.get("variant") or coin.get("theme") or "").strip(),
+                 str(coin.get("variant") or coin.get("theme") or "").strip()),
             )
             row=cur.fetchone()
             if not row:return None
-            (m_country,m_currency,m_denom,m_comp,m_weight,m_diam,m_conf,m_priority,m_verified)=row
+            (m_country,m_currency,m_denom,m_comp,m_metal,m_fineness,m_weight,m_diam,
+             m_fine_g,m_conf,m_priority,m_verified,m_variant)=row
             return {
                 "id":None,"title":f"{coin.get('denom','')} {coin.get('countryEN') or coin.get('country','')} {coin.get('year','')}".strip(),
-                "issuer":"","composition":m_comp,"weight_g":float(m_weight) if m_weight is not None else None,
+                "issuer":"","composition":m_comp,"primary_metal":m_metal,
+                "fineness_per_mille":float(m_fineness) if m_fineness is not None else None,
+                "weight_g":float(m_weight) if m_weight is not None else None,
                 "diameter_mm":float(m_diam) if m_diam is not None else None,"obverse_image":None,"reverse_image":None,
+                "fine_metal_g":float(m_fine_g) if m_fine_g is not None else None,
                 "url":None,"match_class":"LOCAL_SPEC_PG","confidence":float(m_conf) if m_conf is not None else 1.0,
                 "spec_source":"CoinBids PostgreSQL specifications database","data_provider":"CoinBids local specifications (PostgreSQL)"
             }
@@ -2598,26 +2684,33 @@ def coin_lookup():
     query=" ".join(str(x) for x in [coin.get("countryEN") or coin.get("country"),coin.get("denom"),coin.get("year"),coin.get("variant")] if x).strip()
     if not query:query=(payload.get("raw_query") or "").strip()
     if not query:return jsonify({"error":"empty query"}),400
-    # Physical-spec priority: identity-validated MA-Shops first.
-    # This prevents an older/local catalogue record from overriding explicit
-    # weight/fineness shown on the matching MA-Shops item page.
-    ma_spec=mashops_spec_fallback(coin,(payload.get("raw_query") or "").strip())
-    if ma_spec:
-        return jsonify({"match":ma_spec,"provider":"ma_shops",
-                        "note":"Physical specifications extracted from an identity-validated MA-Shops item page."})
-
-    # Zero-quota local fallback when MA-Shops does not expose reliable specs.
+    # Database first: a complete local record satisfies the request without
+    # spending quota or making an external request. Keep an incomplete hit
+    # as a fallback while trying to enrich it from a validated listing.
     local_match=pg_coin_spec_match(coin)
     provider="local_pg"
     if not local_match:
         local_match=local_coin_spec_match(coin)
         provider="local"
-    if local_match:
+    if _spec_is_sufficient(local_match):
         return jsonify({"match":local_match,"provider":provider,
-                        "note":"Physical specifications resolved from the local catalogue because no validated MA-Shops physical specification was available."})
+                        "note":"Physical specifications resolved from the local catalogue; no external lookup was required."})
+
+    # Cache miss/incomplete record: query the identity-validated MA-Shops
+    # fallback once, then immediately enrich PostgreSQL for future requests.
+    ma_spec=mashops_spec_fallback(coin,(payload.get("raw_query") or "").strip())
+    if ma_spec:
+        persisted=persist_mashops_spec(coin,ma_spec)
+        return jsonify({"match":ma_spec,"provider":"ma_shops",
+                        "catalogue_enriched":persisted,
+                        "note":"Physical specifications extracted from an identity-validated MA-Shops item page and saved for future database-first lookups."})
 
     results,err=numista_search(query,category="coin",count=12,year=coin.get("year"))
-    if err:return jsonify({"match":None,"error":err}),200
+    if err:
+        if local_match:
+            return jsonify({"match":local_match,"provider":provider,"error":err,
+                            "note":"The database record is incomplete and external enrichment is temporarily unavailable."}),200
+        return jsonify({"match":None,"error":err}),200
     survivors=[];rejected=[]
     numista_calls_saved=0
     # Stage 1: filter/rank using ONLY the /types search-result fields
@@ -2667,6 +2760,10 @@ def coin_lookup():
         survivors.append((confidence,detail,cand,issues))
     survivors.sort(key=lambda x:x[0],reverse=True)
     if not survivors:
+        if local_match:
+            return jsonify({"match":local_match,"provider":provider,
+                            "note":"Returned the available database record; no reliable external enrichment match was found.",
+                            "rejected":rejected[:8]})
         return jsonify({"match":None,"note":"No reliable Numista match satisfied country + denomination + year.","rejected":rejected[:8]})
     # Multiple validated candidates with no explicit variant = ambiguous, do not choose arbitrarily.
     if len(survivors)>1 and not (coin.get("variant") or "").strip():
@@ -3625,23 +3722,30 @@ def coin_search():
     )
     shipping_weight_source="request" if item_weight_g else None
 
-    # Automatic MA-Shops/coin-spec weight bridge:
+    # Automatic database/MA-Shops weight bridge:
     # shipping tiers often depend on grams. If the frontend did not send a
     # weight, reuse a cached validated MA-Shops physical spec; if none exists,
     # resolve the exact coin specs once and feed that verified weight directly
     # into the local shipping database. No shipping-page request is made.
     if include_shipping and not item_weight_g:
         _coin_for_specs=payload.get("coin") or {}
-        _cached_spec=cached_mashops_spec(_coin_for_specs)
-        if _cached_spec and _cached_spec.get("weight_g"):
-            item_weight_g=_cached_spec.get("weight_g")
-            shipping_weight_source="ma_shops_cached_spec"
+        _db_spec=pg_coin_spec_match(_coin_for_specs) or local_coin_spec_match(_coin_for_specs)
+        if _db_spec and _db_spec.get("weight_g"):
+            item_weight_g=_db_spec.get("weight_g")
+            shipping_weight_source=("coin_specs_pg" if _db_spec.get("match_class")=="LOCAL_SPEC_PG" else "coin_specs_local")
         else:
+            _cached_spec=cached_mashops_spec(_coin_for_specs)
+            if _cached_spec and _cached_spec.get("weight_g"):
+                item_weight_g=_cached_spec.get("weight_g")
+                shipping_weight_source="ma_shops_cached_spec"
+                persist_mashops_spec(_coin_for_specs,_cached_spec)
             try:
-                _spec=mashops_spec_fallback(_coin_for_specs,(payload.get("raw_query") or "").strip())
-                if _spec and _spec.get("weight_g"):
-                    item_weight_g=_spec.get("weight_g")
-                    shipping_weight_source="ma_shops_validated_spec"
+                if not item_weight_g:
+                    _spec=mashops_spec_fallback(_coin_for_specs,(payload.get("raw_query") or "").strip())
+                    if _spec and _spec.get("weight_g"):
+                        item_weight_g=_spec.get("weight_g")
+                        shipping_weight_source="ma_shops_validated_spec"
+                        persist_mashops_spec(_coin_for_specs,_spec)
             except Exception as _e:
                 print(f"[shipping-db] automatic weight resolution failed: {type(_e).__name__}: {_e}",flush=True)
 
