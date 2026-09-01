@@ -53,9 +53,15 @@ new = '''            # MA-Shops can return a Creoline human-verification checkpo
                 continue
             soup=BeautifulSoup(r.text,"html.parser")
 '''
-if old in text:
+if 'human-verification/WAF checkpoint detected' in text:
+    # Already applied. The legacy CAPTCHA anchor intentionally remains below
+    # the checkpoint guard, so testing only ``old in text`` was not idempotent:
+    # every Audit run inserted another identical guard and triggered a second
+    # Render deployment. Do nothing when the verified guard already exists.
+    pass
+elif old in text:
     text = text.replace(old, new, 1)
-elif 'human-verification/WAF checkpoint detected' not in text:
+else:
     raise SystemExit('MA-Shops checkpoint insertion anchor not found')
 
 backend.write_text(text, encoding='utf-8')
