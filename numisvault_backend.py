@@ -2120,13 +2120,6 @@ def fetch_search(query, payload):
                 last_err="MA-Shops human-verification checkpoint blocked automated search"
                 print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
                 continue
-            # MA-Shops can return a Creoline human-verification checkpoint
-            # with HTTP 200. Detect it explicitly before parsing so the UI does
-            # not misreport a blocked source as "No exact validated match".
-            if _is_mashops_checkpoint_html(r.text, r.url):
-                last_err="MA-Shops human-verification checkpoint blocked automated search"
-                print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
-                continue
             if "captcha" in r.text.lower() and len(r.text)<200000:
                 last_err="MA-Shops returned a CAPTCHA/anti-bot page"
                 print(f"[MA-Shops]   -> looks like a CAPTCHA/anti-bot page", flush=True)
@@ -3231,14 +3224,34 @@ def new_releases():
         print(f"[new-releases] EXCEPTION: {type(e).__name__}: {e}")
         return jsonify({"items":[],"sources":[],"errors":[{"source":"all","error":str(e)}],"fetched_at":time.time()}),200
 
+_METAL_SPOT_CACHE={"at":0.0,"data":None}
+_METAL_SPOT_CACHE_LOCK=threading.Lock()
+_METAL_SPOT_FRESH_SECONDS=60
+_METAL_SPOT_STALE_SECONDS=6*60*60
+
+def _cached_metal_spot(allow_stale=False, provider_errors=None):
+    with _METAL_SPOT_CACHE_LOCK:
+        data=_METAL_SPOT_CACHE.get("data")
+        age=max(0.0,time.time()-float(_METAL_SPOT_CACHE.get("at") or 0))
+    limit=_METAL_SPOT_STALE_SECONDS if allow_stale else _METAL_SPOT_FRESH_SECONDS
+    if not data or age>limit:return None
+    result=dict(data)
+    result["cache"]="stale" if allow_stale else "hit"
+    result["quote_age_seconds"]=round(age,1)
+    if provider_errors:result["providers_failed"]=list(provider_errors)
+    return result
+
 @app.get("/api/metal-spot")
 def metal_spot():
     """Return live XAU/XAG USD/oz plus USD->EUR.
 
     Primary provider: gold-api.com (free real-time endpoint, no API key).
-    Fallback: goldprice.org. Never fabricates prices: if both providers fail,
-    the endpoint returns HTTP 503 and the frontend keeps showing unavailable.
+    Fallback: goldprice.org. Never fabricates prices: after one verified live
+    quote, a bounded six-hour stale cache bridges temporary provider outages.
     """
+    cached=_cached_metal_spot()
+    if cached is not None:return jsonify(cached)
+
     gold_usd_oz=None
     silver_usd_oz=None
     source=None
@@ -3290,32 +3303,37 @@ def metal_spot():
             print(f"[metal-spot][goldprice] FAILED: {type(e).__name__}: {e}",flush=True)
 
     if gold_usd_oz is None or silver_usd_oz is None:
+        stale=_cached_metal_spot(allow_stale=True,provider_errors=errors)
+        if stale is not None:return jsonify(stale)
         return jsonify({"error":"live metal price unavailable","providers_failed":errors}),503
 
     # fx_rates() is EUR-based (1 EUR = rates["USD"] USD), therefore USD->EUR
     # is its reciprocal. The previous code used rates["EUR"] (=1.0), which
     # incorrectly treated USD and EUR as equal in Metal Value calculations.
-    rates=fx_rates()
-    usd_per_eur=rates.get("USD")
-    if not usd_per_eur:
-        print("[metal-spot][fx] FAILED: USD exchange rate unavailable",flush=True)
-        return jsonify({"error":"live FX rate unavailable"}),503
-       # --- ΔΙΟΡΘΩΣΗ BUG: Αμυντικός έλεγχος FX μετατροπής ---
+    # fx_rates() is called once: it may perform network I/O when its own cache
+    # is cold, so duplicate calls only increase latency and failure surface.
     rates = fx_rates()
     usd_per_eur = rates.get("USD")
     if not usd_per_eur or float(usd_per_eur) <= 0:
         print("[metal-spot][fx] FAILED: USD exchange rate unavailable or invalid", flush=True)
+        stale=_cached_metal_spot(allow_stale=True,provider_errors=errors+["FX unavailable or invalid"])
+        if stale is not None:return jsonify(stale)
         return jsonify({"error": "live FX rate unavailable"}), 503
         
     usd_to_eur = 1.0 / float(usd_per_eur)
 
 
-    return jsonify({
+    result={
         "gold_usd_oz":gold_usd_oz,
         "silver_usd_oz":silver_usd_oz,
         "usd_to_eur":usd_to_eur,
-        "source":source+" + CoinBids FX"
-    })
+        "source":source+" + CoinBids FX",
+        "cache":"miss",
+        "quote_age_seconds":0.0,
+    }
+    with _METAL_SPOT_CACHE_LOCK:
+        _METAL_SPOT_CACHE.update(at=time.time(),data=dict(result))
+    return jsonify(result)
 
 @app.get("/health")
 def health():
