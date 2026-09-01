@@ -2120,13 +2120,6 @@ def fetch_search(query, payload):
                 last_err="MA-Shops human-verification checkpoint blocked automated search"
                 print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
                 continue
-            # MA-Shops can return a Creoline human-verification checkpoint
-            # with HTTP 200. Detect it explicitly before parsing so the UI does
-            # not misreport a blocked source as "No exact validated match".
-            if _is_mashops_checkpoint_html(r.text, r.url):
-                last_err="MA-Shops human-verification checkpoint blocked automated search"
-                print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
-                continue
             if "captcha" in r.text.lower() and len(r.text)<200000:
                 last_err="MA-Shops returned a CAPTCHA/anti-bot page"
                 print(f"[MA-Shops]   -> looks like a CAPTCHA/anti-bot page", flush=True)
@@ -2384,7 +2377,9 @@ def numista_search(query, category="coin", count=12, year=None):
     if category:
         params["category"] = category
 
-    url = f"{NUMISTA_BASE}/items"
+    # Official Numista API v3 catalogue search endpoint is GET /types.
+    # /items does not exist and returns HTTP 404 before catalogue lookup.
+    url = f"{NUMISTA_BASE}/types"
     r, transport_err = _numista_get_with_backoff(url, params=params, timeout=15)
     if transport_err:
         return None, transport_err
