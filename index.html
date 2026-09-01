@@ -1552,11 +1552,14 @@ async function buildResearch(){
  }
  $('researchQueries').innerHTML=html;renderOffers();
  renderOwnedBox(checkOwnCollection(t));
- // Price Research remains the critical path, but verified specification
- // enrichment must also run. Launch it independently so metals can fill in
- // without delaying the price result.
- void fetchCatalogLookup(ep,tEN,researchToken);
+ // Complete Price Research first, then let the specification lookup reuse
+ // its already identity-validated MA-Shops candidates. Running both requests
+ // concurrently caused a race where the spec request could be WAF-blocked and
+ // show "Specifications unavailable" even though the price request succeeded.
  await autoResearch(ep,tEN,researchToken);
+ if(researchToken===currentResearchToken){
+   await fetchCatalogLookup(ep,tEN,researchToken);
+ }
 }
 $('researchBtn').onclick=()=>{captureResearchState();return buildResearch()};
 ['rFreeText','rCurrency','rGrade','rShipping','rShipTo'].forEach(id=>{
