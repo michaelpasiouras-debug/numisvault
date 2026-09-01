@@ -34,6 +34,12 @@ except Exception as _corrections_import_err:
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
 from multilingual_country_aliases import normalize_country_aliases_in_text
+from price_research_providers import (
+    CallableProvider,
+    ProviderRegistry,
+    consolidate_provider_statuses,
+    flatten_provider_results,
+)
 
 app = Flask(__name__)
 ALLOWED_ORIGINS=os.environ.get("COINBIDS_CORS_ORIGINS","*").split(",")
@@ -2124,6 +2130,16 @@ def fetch_ebay_search(query, payload):
             print(f"[eBay]   -> EXCEPTION: {e}", flush=True)
     return [], None, last_err
 
+
+# Listing sources are registered explicitly.  Keep provider collection separate
+# from the common identity, shipping, FX and ranking funnel in coin_search().
+# eBay is intentionally not enabled here: the legacy fetcher exists, but it was
+# not part of the live coin_search flow and enabling it would change production
+# behaviour without provider-specific shipping/availability validation.
+PRICE_RESEARCH_PROVIDERS = ProviderRegistry([
+    CallableProvider("MA-Shops", fetch_search),
+])
+
 # ---- Numista catalogue lookup: composition, weight, diameter, images. ----
 # Official, documented, keyed REST API (not scraping) — https://en.numista.com/api/doc/index.php
 # Auth: HTTP header "Numista-API-Key: <key>". Key is read ONLY from the
@@ -3338,6 +3354,7 @@ def coin_search():
                 print(f"[resolver] coin-search target identity failed: {type(e).__name__}: {e}")
 
     queries=make_queries(payload);all_offers=[];errors=[];used=[]
+    all_provider_results=[]
     # QA-only candidate-funnel trace. Normal Price Research requests pay only
     # a couple of boolean/list initializations; detailed evidence is collected
     # exclusively when qa_full_evidence=true. This is diagnostic metadata only:
@@ -3355,37 +3372,39 @@ def coin_search():
     # tripping its anti-bot/CAPTCHA protection, which a large burst of
     # simultaneous requests risks doing far more than a moderate, bounded
     # level of concurrency does.
-    MAX_CONCURRENT_MA_SHOPS_REQUESTS=3
-    executor=ThreadPoolExecutor(max_workers=MAX_CONCURRENT_MA_SHOPS_REQUESTS)
-    future_to_query={executor.submit(fetch_search,q,payload):q for q in queries}
+    MAX_CONCURRENT_PRICE_RESEARCH_REQUESTS=3
+    executor=ThreadPoolExecutor(max_workers=MAX_CONCURRENT_PRICE_RESEARCH_REQUESTS)
+    future_to_query={executor.submit(PRICE_RESEARCH_PROVIDERS.search_all,q,payload):q for q in queries}
     try:
         for future in as_completed(future_to_query):
             q=future_to_query[future]
             try:
-                ma_offers,ma_url,ma_err=future.result()
+                provider_results=future.result()
             except Exception as e:
-                ma_offers,ma_url,ma_err=[],None,str(e)
-            if ma_url:used.append({"query":q,"source":"MA-Shops","url":ma_url})
-            if ma_err:errors.append({"query":q,"source":"MA-Shops","error":ma_err})
+                # search_all should normally contain provider exceptions inside
+                # ProviderResult, but retain an endpoint-level guard as well.
+                provider_results=[]
+                errors.append({"query":q,"source":"ProviderRegistry","error":str(e)})
+            all_provider_results.extend(provider_results)
+            q_offers,q_used,q_errors,_=flatten_provider_results(provider_results)
+            used.extend(q_used)
+            errors.extend(q_errors)
             if trace_enabled:
                 query_trace.append({
                     "query":q,
-                    "raw_hits":len(ma_offers),
-                    "search_url":ma_url,
-                    "error":ma_err,
+                    "raw_hits":len(q_offers),
+                    "search_urls":q_used,
+                    "errors":q_errors,
+                    "provider_statuses":{r.provider:r.availability for r in provider_results},
                     "listings":[{
                         "title":o.get("title"),"url":o.get("url"),
                         "raw_price":o.get("price"),"currency":o.get("currency"),
                         "raw_shipping":o.get("shipping"),
                         "shipping_status":o.get("shipping_status"),
-                    } for o in ma_offers[:100]],
+                        "source":o.get("dealer_source"),
+                    } for o in q_offers[:100]],
                 })
-            for o in ma_offers:
-                if trace_enabled:
-                    o.setdefault("_source_queries",[])
-                    if q not in o["_source_queries"]:
-                        o["_source_queries"].append(q)
-            all_offers.extend(ma_offers)
+            all_offers.extend(q_offers)
             # IMPORTANT: consume every generated MA-Shops query. Futures finish
             # out of order, so an early raw-count cutoff can silently discard
             # the query containing the true cheapest valid listing. Bound each
@@ -3395,6 +3414,10 @@ def coin_search():
         # Correctness requires every generated query to complete: the cheapest
         # valid listing may live in any query, regardless of completion order.
         executor.shutdown(wait=True,cancel_futures=False)
+    provider_statuses=consolidate_provider_statuses(
+        all_provider_results,
+        [p.name for p in PRICE_RESEARCH_PROVIDERS.providers],
+    )
     raw_count=len(all_offers)
     searched_cheapest_first=any("sortby=preis_eur" in str(u.get("url","")) for u in used)
     # Deduplicate by canonical URL.
@@ -3528,26 +3551,50 @@ def coin_search():
         target_currency=(payload.get("currency") or "EUR").upper()
         if o.get("shipping_status")=="unverified":
             o["shipping"]=None
-        item_eur=to_eur(o.get("price"),o.get("currency"))
-        ship_eur=to_eur(o.get("shipping"),o.get("currency")) if o.get("shipping") is not None else None
-        if target_currency=="EUR":
-            o["price"]=round(item_eur,2) if item_eur is not None else o.get("price")
-            if ship_eur is not None:o["shipping"]=round(ship_eur,2)
+        if o.get("_normalized_target_currency")!=target_currency:
+            source_currency=o.get("currency")
+            item_eur=to_eur(o.get("price"),source_currency)
+            original_eur=None
             if o.get("original_price") is not None:
-                _old_eur=to_eur(o.get("original_price"),o.get("discount_currency") or o.get("currency"))
-                if _old_eur is not None:o["original_price"]=round(_old_eur,2)
-            o["currency"]="EUR"
-        elif target_currency in ("USD","GBP","CHF") and o.get("currency")!=target_currency:
-            rates=fx_rates();rate=rates.get(target_currency)
-            if item_eur is not None and rate:
-                o["price"]=round(item_eur*rate,2)
-                if ship_eur is not None:o["shipping"]=round(ship_eur*rate,2)
-                o["currency"]=target_currency
+                original_eur=to_eur(o.get("original_price"),o.get("discount_currency") or source_currency)
+            if target_currency=="EUR":
+                o["price"]=round(item_eur,2) if item_eur is not None else o.get("price")
+                if original_eur is not None:o["original_price"]=round(original_eur,2)
+                o["currency"]="EUR"
+            elif target_currency in ("USD","GBP","CHF") and source_currency!=target_currency:
+                rates=fx_rates();rate=rates.get(target_currency)
+                if item_eur is not None and rate:
+                    o["price"]=round(item_eur*rate,2)
+                    if original_eur is not None:o["original_price"]=round(original_eur*rate,2)
+                    o["currency"]=target_currency
+            o["_normalized_target_currency"]=target_currency
+        # Shipping may be populated after the item price was normalized (DB or
+        # item-page fallback), and it may use a currency different from the
+        # listing. Normalize it independently and only when its value/currency
+        # changes; repeated finalize() calls then only recompute total.
+        if o.get("shipping") is not None:
+            shipping_currency=o.get("shipping_currency") or o.get("currency")
+            shipping_signature=(o.get("shipping"),shipping_currency,target_currency)
+            if o.get("_normalized_shipping_signature")!=shipping_signature:
+                shipping_eur=to_eur(o.get("shipping"),shipping_currency)
+                normalized_shipping=None
+                if target_currency=="EUR":
+                    normalized_shipping=shipping_eur
+                elif target_currency in ("USD","GBP","CHF"):
+                    rate=fx_rates().get(target_currency)
+                    if shipping_eur is not None and rate:
+                        normalized_shipping=shipping_eur*rate
+                if normalized_shipping is not None:
+                    o["shipping"]=round(normalized_shipping,2)
+                    o["shipping_currency"]=target_currency
+                o["_normalized_shipping_signature"]=(o.get("shipping"),o.get("shipping_currency") or target_currency,target_currency)
+        else:
+            o.pop("_normalized_shipping_signature",None)
         if include_shipping:
             o["total"]=round(float(o["price"])+float(o["shipping"]),2) if o.get("shipping") is not None else None
         else:
             o["total"]=round(float(o["price"]),2)
-        if not o.get("dealer"):o["dealer"]="MA-Shops"
+        if not o.get("dealer"):o["dealer"]=o.get("dealer_source") or "Unknown"
 
 
     # Normalize item prices, then resolve destination shipping locally.
@@ -3562,7 +3609,7 @@ def coin_search():
             if o.get("shipping_status")=="known_target_search" and o.get("shipping") is not None:
                 # Search row explicitly named the chosen destination.
                 finalize(o)
-            elif lookup_mashops_shipping(o,ship_to_country,item_weight_g):
+            elif o.get("dealer_source")=="MA-Shops" and lookup_mashops_shipping(o,ship_to_country,item_weight_g):
                 o["shipping_weight_g"]=item_weight_g
                 o["shipping_weight_source"]=shipping_weight_source
                 finalize(o)
@@ -3570,7 +3617,7 @@ def coin_search():
                 o["shipping"]=None
                 o["shipping_status"]="unknown_db_no_match"
                 o["total"]=None
-                detail_fallback.append(o)
+                if o.get("dealer_source")=="MA-Shops":detail_fallback.append(o)
 
     # At most the two cheapest unresolved offers, in parallel.  Direct GET only
     # (use_geo_proxy=False): no paid proxy and no undefined fetch_geo_targeted
@@ -3671,6 +3718,8 @@ def coin_search():
         d.pop("dealer_source",None)
         d.pop("_match_text",None)
         d.pop("_source_queries",None)
+        d.pop("_normalized_target_currency",None)
+        d.pop("_normalized_shipping_signature",None)
         return d
     top_public=[public_offer(o) for o in top]
     sample_public=[public_offer(o) for o in market_sample]
@@ -3704,8 +3753,9 @@ def coin_search():
         "market_sample":sample_public,
         "best_offer":top_public[0] if top_public else None,"count":len(top_public),"raw_count":raw_count,
         "unique_count":unique_count,"valid_count":valid_count,"diagnostics":diagnostics,"rejected":rejected,
-        "sources_ok":["MA-Shops"] if used else [],
-        "sources_failed":["MA-Shops"] if errors and not used else [],"errors":errors[-6:],
+        "sources_ok":[k for k,v in provider_statuses.items() if v=="ok"],
+        "sources_failed":[k for k,v in provider_statuses.items() if v in ("unavailable","error")],
+        "provider_statuses":provider_statuses,"errors":errors[-6:],
         "note":"The two cheapest validated matching COIN listings found after scanning both normal and cheapest-first MA-Shops search results are shown as purchase anchors. Dealer market value (Auction Intelligence) uses a separate, broader relevance-ranked sample — not only those two lowest asks. Unknown shipping is never treated as free.",
         "shipping_note":f"shipping=null means unknown. shipping_status distinguishes confidence: known_target (item page confirmed your chosen destination, {ship_to_country}), known_target_search (MA-Shops search row explicitly named your chosen destination), known_target_db (matched dealer/destination tier in the local shipping database), known_other_destination (a specific other destination was found — see shipping_destination), known_unconfirmed_destination (a flat rate was found with no destination stated), free (confirmed free), unknown (nothing reliable found).",
         "ship_to_country":ship_to_country,
