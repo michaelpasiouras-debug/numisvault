@@ -2,7 +2,9 @@ import unittest
 
 from price_research_providers import (
     CallableProvider,
+    ProviderResult,
     ProviderRegistry,
+    consolidate_provider_statuses,
     flatten_provider_results,
 )
 
@@ -51,6 +53,38 @@ class PriceResearchProviderTests(unittest.TestCase):
         registry = ProviderRegistry([CallableProvider("A", lambda q, p: ([], None, None))])
         with self.assertRaises(ValueError):
             registry.register(CallableProvider("A", lambda q, p: ([], None, None)))
+
+    def test_multi_query_status_is_ok_when_any_query_succeeds(self):
+        results = [
+            ProviderResult("MA-Shops", "q1", availability="unavailable"),
+            ProviderResult("MA-Shops", "q2", availability="ok"),
+        ]
+        self.assertEqual(consolidate_provider_statuses(results), {"MA-Shops": "ok"})
+
+    def test_multi_query_status_is_unavailable_only_when_all_are_unavailable(self):
+        all_blocked = [
+            ProviderResult("MA-Shops", "q1", availability="unavailable"),
+            ProviderResult("MA-Shops", "q2", availability="unavailable"),
+        ]
+        mixed_failure = [
+            ProviderResult("MA-Shops", "q1", availability="unavailable"),
+            ProviderResult("MA-Shops", "q2", availability="error"),
+        ]
+        self.assertEqual(consolidate_provider_statuses(all_blocked), {"MA-Shops": "unavailable"})
+        self.assertEqual(consolidate_provider_statuses(mixed_failure), {"MA-Shops": "error"})
+
+    def test_expected_but_unexecuted_provider_is_not_configured(self):
+        self.assertEqual(
+            consolidate_provider_statuses([], ["AuthorizedFeed"]),
+            {"AuthorizedFeed": "not_configured"},
+        )
+
+    def test_flatten_does_not_mutate_provider_owned_query_provenance(self):
+        source_offer = {"title": "Coin", "_source_queries": ["original"]}
+        result = ProviderResult("Feed", "new", offers=[source_offer])
+        offers, _, _, _ = flatten_provider_results([result])
+        self.assertEqual(offers[0]["_source_queries"], ["original", "new"])
+        self.assertEqual(source_offer["_source_queries"], ["original"])
 
 
 if __name__ == "__main__":
