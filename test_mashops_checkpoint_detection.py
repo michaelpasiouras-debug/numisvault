@@ -19,6 +19,7 @@ assert not mod._is_mashops_checkpoint_html(normal, 'https://www.ma-shops.com/sho
 src = Path('numisvault_backend.py').read_text(encoding='utf-8')
 assert 'MA-Shops human-verification checkpoint blocked automated search' in src
 assert '_is_mashops_checkpoint_html(r.text, r.url)' in src
+assert src.count('human-verification/WAF checkpoint detected at') == 1
 
 ui = Path('index.html').read_text(encoding='utf-8')
 assert "MA-Shops temporarily unavailable" in ui
