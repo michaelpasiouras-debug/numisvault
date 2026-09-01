@@ -1758,12 +1758,16 @@ async function fetchMetalSpotFromBackend(){
  const endpoint=getApiEndpoint();
  const u=new URL(endpoint,window.location.href);
  const base=u.origin+(u.pathname.replace(/\/api\/coin-search\/?$/,''));
- const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),15000);
+ // Backend may spend up to 10s on its primary source and another 12s on the
+ // fallback. Keep the browser deadline above that legitimate server budget.
+ const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),30000);
  try{
    const res=await fetch(base+'/api/metal-spot',{signal:ctrl.signal});
    const data=await res.json().catch(()=>({}));
    if(!res.ok) throw new Error(data.error||('HTTP '+res.status));
-   _spotCacheUSD={gold:Number(data.gold_usd_oz),silver:Number(data.silver_usd_oz),platinum:Number(data.platinum_usd_oz),palladium:Number(data.palladium_usd_oz),eur:Number(data.usd_to_eur),source:data.source||'live spot feed',fxSource:data.fx_source||'FX feed'};
+   const n=v=>(v===null||v===undefined||v==='')?null:Number(v);
+   _spotCacheUSD={gold:n(data.gold_usd_oz),silver:n(data.silver_usd_oz),platinum:n(data.platinum_usd_oz),palladium:n(data.palladium_usd_oz),eur:n(data.usd_to_eur),source:data.source||'live spot feed',fxSource:data.fx_source||'CoinBids FX'};
+   if(!(_spotCacheUSD.gold>0)||!(_spotCacheUSD.silver>0)||!(_spotCacheUSD.eur>0)) throw new Error('Invalid metal spot response.');
    _spotCacheAt=Date.now();
    return _spotCacheUSD;
  }finally{clearTimeout(timer);}
