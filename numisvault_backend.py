@@ -742,12 +742,20 @@ def to_eur(value,currency):
 
 def make_queries(payload):
     coin = payload.get("coin") or {}
-    raw = (payload.get("raw_query") or coin.get("raw") or "").strip()
-    country = (coin.get("country") or "").strip()
-    denom = (coin.get("denom") or coin.get("denomination") or "").strip()
+    # Resolver fields are typed data: denomination_value is a float (for
+    # example 10.0), while browser-originated fields are normally strings.
+    # coin_search() propagates that numeric value into coin["denom"] before
+    # calling make_queries(), so calling .strip() directly caused every
+    # raw-only resolved request to crash with HTTP 500.
+    def clean_text(value):
+        return str(value).strip() if value is not None else ""
+
+    raw = clean_text(payload.get("raw_query") or coin.get("raw"))
+    country = clean_text(coin.get("country"))
+    denom = clean_text(coin.get("denom") if coin.get("denom") is not None else coin.get("denomination"))
     year = str(coin.get("year") or "").strip()
-    variant = (coin.get("variant") or "").strip()
-    grade = (coin.get("grade") or "").strip()
+    variant = clean_text(coin.get("variant"))
+    grade = clean_text(coin.get("grade"))
 
     # Server-side Coin Identity Resolver fallback: the frontend already calls
     # /api/resolve-coin before building this payload, so in the normal path
