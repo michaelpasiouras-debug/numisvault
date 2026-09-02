@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 50524)
-Total output lines: 4044
-
 from flask import Flask, request, jsonify, send_from_directory, redirect
 from flask_cors import CORS
 import requests, re, html as ihtml, urllib.parse, time, os, math, threading, json, hashlib
@@ -251,6 +248,7 @@ DEST_ALIASES={
     "vatican city state":"vatican city",
     "eu":"european union","worldwide":"world"
 }
+
 def _norm_dest(s):
     s=(s or "").strip().lower()
     return DEST_ALIASES.get(s,s)
@@ -500,6 +498,7 @@ def canonical_country(s):
     for canon,aliases in COUNTRY_CANON.items():
         if a==canon or any(norm(x) in a for x in aliases): return canon
     return a
+
 
 def destination_pattern_and_iso(country_name):
     """Given whatever the user typed/selected as their destination country,
@@ -751,6 +750,7 @@ def make_queries(payload):
     # Resolver fields are typed data: denomination_value is a float (for
     # example 10.0), while browser-originated fields are normally strings.
     # coin_search() propagates that numeric value into coin["denom"] before
+
     # calling make_queries(), so calling .strip() directly caused every
     # raw-only resolved request to crash with HTTP 500.
     def clean_text(value):
@@ -1001,6 +1001,7 @@ THEME_WORD_TRANSLATIONS=[
     {"discovery","entdeckung","decouverte","découverte","scoperta","descubrimiento","ανακαλυψη","ανακάλυψη"},
     {"mint","münze","muenze","monnaie","zecca","casa de moneda","νομισματοκοπειο","νομισματοκοπείο"},
     {"mechanism","mechanismus","mecanisme","mécanisme","meccanismo","mecanismo","μηχανισμος","μηχανισμός"},
+
     {"queen","königin","koenigin","reine","regina","reina","βασιλισσα","βασίλισσα"},
     {"king","könig","koenig","roi","re","rey","βασιλιας","βασιλιάς"},
     {"president","präsident","praesident","president","presidente","προεδρος","πρόεδρος"},
@@ -1251,6 +1252,7 @@ def passes_hard_filter(title, payload):
 
        # Country is a hard constraint only when the user explicitly supplied it.
     # A country inferred by the identity resolver is evidence for ranking and
+
     # identity resolution, not permission to reject a historically distinct
     # issuing authority.  Example: raw "5 drachmai 1901" may resolve broadly
     # to Greece, while valid listings identify the issuer as Crete/Kreta.
@@ -1501,6 +1503,7 @@ def detect_discount_from_price_cell(node, parsed_price=None):
     return {
         "is_discounted":True,
         "original_price":round(old_price,2),
+
         "sale_price":round(current,2),
         "discount_pct":pct,
         "discount_currency":currency,
@@ -1751,6 +1754,7 @@ def enrich_offer_from_item_page(offer, ship_to_country="Greece", use_geo_proxy=F
             amt=find_money(rx.group(1))
             if amt is not None:
                 offer["shipping"]=amt
+
                 offer["shipping_status"]="free" if amt==0 else "known_unconfirmed_destination"
                 offer["shipping_destination"]=None
                 return offer
@@ -2001,6 +2005,7 @@ def mashops_spec_fallback(coin, raw_query=""):
                 "title":o.get("title") or base_query,
                 "issuer":"",
                 "obverse_image":None,
+
                 "reverse_image":None,
                 "url":r.url,
                 "match_class":"MA_SHOPS_VALIDATED_SPEC",
@@ -2093,7 +2098,50 @@ def fetch_search(query, payload):
             r=SESSION.get(url,timeout=20,allow_redirects=True)
             print(f"[MA-Shops] GET {url} -> HTTP {r.status_code}, {len(r.text)} chars", flush=True)
             if r.status_code!=200:
-                last_err=f…524 tokens truncated…p on ebay","new listing"):
+                last_err=f"HTTP {r.status_code}"
+                continue
+            # MA-Shops can return a Creoline human-verification checkpoint
+            # with HTTP 200. Detect it explicitly before parsing so the UI does
+            # not misreport a blocked source as "No exact validated match".
+            if _is_mashops_checkpoint_html(r.text, r.url):
+                last_err="MA-Shops human-verification checkpoint blocked automated search"
+                print(f"[MA-Shops]   -> human-verification/WAF checkpoint detected at {r.url}", flush=True)
+                continue
+            if "captcha" in r.text.lower() and len(r.text)<200000:
+                last_err="MA-Shops returned a CAPTCHA/anti-bot page"
+                print(f"[MA-Shops]   -> looks like a CAPTCHA/anti-bot page", flush=True)
+                continue
+            soup=BeautifulSoup(r.text,"html.parser")
+            offers=extract_from_jsonld(soup,r.url,payload)
+            offers+=extract_cards(soup,r.url,payload)
+            for o in offers: o["dealer_source"]="MA-Shops"
+            print(f"[MA-Shops]   -> parsed {len(offers)} offer(s)", flush=True)
+            if offers:
+                combined.extend(offers)
+                used_urls.append(r.url)
+            else:
+                last_err="No offer blocks parsed"
+        except Exception as e:
+            last_err=str(e)
+            print(f"[MA-Shops]   -> EXCEPTION: {e}", flush=True)
+    if combined:
+        return combined, " | ".join(used_urls), None
+    return [], None, last_err
+
+def extract_ebay_cards(soup, source_url, payload):
+    offers=[]
+    items = soup.select("li.s-item, div.s-item__wrapper")
+    seen=set()
+    for item in items:
+        link = item.select_one('a.s-item__link, a[href*="/itm/"]')
+        if not link: continue
+        href = link.get("href","")
+        if "/itm/" not in href: continue
+        href = href.split("?")[0]
+        if href in seen: continue
+        title_el = item.select_one(".s-item__title")
+        title = title_el.get_text(" ", strip=True) if title_el else ""
+        if not title or title.strip().lower() in ("shop on ebay","new listing"):
             continue
         price_el = item.select_one(".s-item__price")
         if not price_el: continue
@@ -2208,6 +2256,7 @@ def _get_pg_connection():
     global _PG_POOL
     if not DATABASE_URL:return None
     if _PG_POOL is None:
+
         try:
             import psycopg2.pool
             _PG_POOL=psycopg2.pool.SimpleConnectionPool(1,5,DATABASE_URL)
@@ -2457,6 +2506,7 @@ def numista_search(query, category="coin", count=12, year=None):
         return items or [], None
     except Exception as e:
         return None, str(e)
+
 
 # ---- Numista caching policy (IMPORTANT — read before changing) -----------
 # Per the Numista API Terms of Use §8.1: "Licensed Data must not be
@@ -2708,6 +2758,7 @@ def coin_lookup():
     results,err=numista_search(query,category="coin",count=12,year=coin.get("year"))
     if err:
         if local_match:
+
             return jsonify({"match":local_match,"provider":provider,"error":err,
                             "note":"The database record is incomplete and external enrichment is temporarily unavailable."}),200
         return jsonify({"match":None,"error":err}),200
@@ -2958,6 +3009,7 @@ def listing_match_score_api():
 # The frontend holds all state (comparables list, snapshot) and passes it
 # back in each call; the backend never stores an Auction Intelligence
 # session. This matches the existing CoinBids architecture (no server-side
+
 # session store) and keeps these endpoints trivially cacheable/scalable.
 #
 # NOTE: no automated external auction-source scraping is performed by any of
@@ -3209,6 +3261,7 @@ def _strip_html_to_text(s):
         s=s[:217].rsplit(' ',1)[0]+'...'
     return s
 
+
 def _parse_feed_date(raw):
     if not raw:return None
     try:
@@ -3458,6 +3511,7 @@ def _search_cache_key(payload):
             payload.get("physical_weight_g"))
     parts += [
         "include_shipping="+str(bool(payload.get("include_shipping"))),
+
         "currency="+str(payload.get("currency") or "EUR").upper(),
         "ship_to="+str(payload.get("ship_to") or "").strip().lower(),
         "weight_g="+str(weight if weight is not None else ""),
@@ -3708,6 +3762,7 @@ def coin_search():
     by_price=sorted(
         valid,
         key=lambda o:(
+
             o.get("price") is None,
             o.get("price") if o.get("price") is not None else float("inf"),
             -o.get("_score",0)
@@ -3958,6 +4013,7 @@ def coin_search():
         "source":"MA-Shops","queries":queries,"used_search_pages":used,"offers":top_public,
         "market_sample":sample_public,
         "best_offer":top_public[0] if top_public else None,"count":len(top_public),"raw_count":raw_count,
+
         "unique_count":unique_count,"valid_count":valid_count,"diagnostics":diagnostics,"rejected":rejected,
         "sources_ok":[k for k,v in provider_statuses.items() if v=="ok"],
         "sources_failed":[k for k,v in provider_statuses.items() if v in ("unavailable","error")],
