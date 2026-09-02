@@ -75,6 +75,7 @@ jobs:
           python test_metal_spot_resilience.py
           python test_numista_search_contract.py
           python test_coin_spec_database_first.py
+          python test_historical_denoms_and_metal_ui.py
 
       - name: Coin Search QA benchmark
         run: python test_coin_search_qa.py
