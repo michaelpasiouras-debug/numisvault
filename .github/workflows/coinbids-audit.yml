@@ -40,7 +40,6 @@ jobs:
           python apply_inferred_country_hard_filter_fix.py
           python apply_pdf_regression_fixes.py
           python apply_candidate_funnel_trace_fix.py
-          python apply_mashops_checkpoint_detection_fix.py
 
       - name: Full repository structural audit
         run: python repo_health_audit.py
