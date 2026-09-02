@@ -30,17 +30,6 @@ jobs:
             pip install Flask flask-cors requests beautifulsoup4
           fi
 
-      - name: Apply current verified patches
-        run: |
-          # Only idempotent patches that still target the current source remain
-          # on the hot path. Older exact-anchor scripts are retired and must not
-          # block deployment after their changes have already been absorbed.
-          python apply_issue_alias_query_fix.py
-          python apply_issue_alias_country_query_fix.py
-          python apply_inferred_country_hard_filter_fix.py
-          python apply_pdf_regression_fixes.py
-          python apply_candidate_funnel_trace_fix.py
-
       - name: Full repository structural audit
         run: python repo_health_audit.py
 
