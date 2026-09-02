@@ -840,6 +840,10 @@ function ubRe(alts,flags){ return new RegExp(ubGroup(alts), (flags||'')+'u'); }
    [new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(?:'+ubGroup('pound|pounds|gbp|στερλιν[αες]')+')','iu'),'pound'],
    [new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(?:'+ubGroup('franc|francs|fragko|fragka|φραγκ[οα]')+')','iu'),'franc'],
    [new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(?:'+ubGroup('mark|marks|deutsche mark|marko|marka|μαρκ[οα]')+')','iu'),'mark'],
+   // Historical Austrian/German denomination.  Without this entry a valid
+   // request such as "Austria 1 thaler 1780 Maria Theresa" has no
+   // denomination, so the search button deliberately refuses to start.
+   [new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(?:'+ubGroup('taler|talers|thaler|thalers')+')','iu'),'taler'],
    [new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(?:'+ubGroup('lira|lire|λιρ[αες]|λιρετ[αες]')+')','iu'),'lira'],
    [new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(?:'+ubGroup('ruble|rubles|rouble|roubles|roubli|rouvli|ρουβλ[ιο][ιαεσ]?')+')','iu'),'ruble'],
    [new RegExp('(\\d+(?:[.,]\\d+)?)\\s*(?:'+ubGroup('kopeck|kopecks|kopek|kopeks|kapiki|kapikia|καπικ[ιαο]')+')','iu'),'kopeck'],
@@ -996,7 +1000,7 @@ function identityTokens(s){
 function denomIdentity(s){
  const p=parseCoinText(String(s||''));
  const raw=normLite(p.denom||s||'');
- const m=raw.match(/(\d+(?:[.,]\d+)?)\s*(euro|cent|drachma|dollar|pence|pound|franc|mark|lira|ruble|kopeck|dinar|lev|stotinka|leu|krona|ore|forint|zloty|koruna|yen|yuan|peseta|escudo|guilder|kuna)/i);
+ const m=raw.match(/(\d+(?:[.,]\d+)?)\s*(euro|cent|drachma|dollar|pence|pound|franc|mark|taler|thaler|lira|ruble|kopeck|dinar|lev|stotinka|leu|krona|ore|forint|zloty|koruna|yen|yuan|peseta|escudo|guilder|kuna)/i);
  if(m)return `${Number(String(m[1]).replace(',','.'))}|${normLite(m[2])}`;
  const n=raw.match(/\d+(?:[.,]\d+)?/);
  return n?`${Number(String(n[0]).replace(',','.'))}|`:'';
@@ -1374,6 +1378,8 @@ async function fetchCatalogLookup(endpoint,t,researchToken){
    refreshFineMetalGrams();
    if(isPrecious && resolvedFineness==null){
      $('mResultBox').innerHTML='<span class="warn">Precious metal detected, but the available composition does not provide a usable fineness. Metal value will not be guessed.</span>';
+   }else if(isPrecious && !(Number($('mWeight').value)>0)){
+     $('mResultBox').innerHTML=`<span class="warn">Verified ${esc(resolvedMetal)} content was found, but the source did not provide a coin weight. Fine-metal grams and melt value cannot be calculated.</span>`;
    }else if(resolvedMetal==='platinum'||resolvedMetal==='palladium'||resolvedMetal==='other_precious'){
      $('mResultBox').innerHTML='<span class="warn">Precious-metal content detected and fine grams calculated. Live melt-value pricing is currently automatic only for silver and gold.</span>';
    }else if(isPrecious && Number($('mWeight').value)>0 && Number($('mFineness').value)>0){
