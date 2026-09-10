@@ -70,6 +70,7 @@ jobs:
           python test_multilingual_country_resolution.py
           python test_multilingual_market_matching.py
           python test_raw_only_api_fallback.py
+          python -m unittest test_resolved_query_handoff -v
           python test_repeated_price_research.py
           python test_coin_search_cache_key.py
           python test_metal_spot_resilience.py

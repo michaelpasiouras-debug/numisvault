@@ -745,7 +745,7 @@ def to_eur(value,currency):
     rate=rates.get(cur)
     return float(value)/float(rate) if rate else None
 
-def make_queries(payload):
+def make_queries(payload, resolved_queries=None):
     coin = payload.get("coin") or {}
     # Resolver fields are typed data: denomination_value is a float (for
     # example 10.0), while browser-originated fields are normally strings.
@@ -770,7 +770,7 @@ def make_queries(payload):
     # frontend resolver call failed silently) — it only FILLS IN missing
     # fields, never overwrites an explicit country/denom/year the caller
     # already supplied, and only uses resolver output that isn't ambiguous.
-    resolver_queries=[]
+    resolver_queries=list(resolved_queries or [])
     if RESOLVER_AVAILABLE and raw and not (country and denom and year):
         try:
             resolved=resolve_coin_identity(raw)
@@ -3569,6 +3569,7 @@ def coin_search():
     # evidence panel. This is purely additive metadata — it never changes
     # which listings pass passes_hard_filter or how they're ranked/selected.
     target_identity=None
+    resolved_search_queries=[]
     if RESOLVER_AVAILABLE:
         _coin_for_target=payload.get("coin") or {}
         _raw_for_target=(payload.get("raw_query") or _coin_for_target.get("raw") or "").strip()
@@ -3579,7 +3580,8 @@ def coin_search():
                 _coin_for_target.get("year")]).strip()
         if _raw_for_target:
             try:
-                target_identity=resolve_coin_identity(_raw_for_target).get("best")
+                target_resolution=resolve_coin_identity(_raw_for_target)
+                target_identity=target_resolution.get("best")
                 # Canonical resolver output must feed the hard filter even when
                 # the client supplied only coin.raw.
                 if target_identity:
@@ -3601,11 +3603,16 @@ def coin_search():
                     if _resolved_currency and not _coin_for_target.get("currency"):
                         _coin_for_target["currency"]=_resolved_currency
                     payload["coin"]=_coin_for_target
+                    # make_queries skips its resolver when these fields are
+                    # already populated. Preserve the validated resolver's
+                    # canonical spellings (e.g. Greece 5 drachma 1901) here.
+                    if target_resolution.get("status")=="resolved":
+                        resolved_search_queries=target_identity.get("search_variants") or []
             except Exception as e:
                 target_identity=None
                 print(f"[resolver] coin-search target identity failed: {type(e).__name__}: {e}")
 
-    queries=make_queries(payload);all_offers=[];errors=[];used=[]
+    queries=make_queries(payload,resolved_queries=resolved_search_queries);all_offers=[];errors=[];used=[]
     all_provider_results=[]
     # QA-only candidate-funnel trace. Normal Price Research requests pay only
     # a couple of boolean/list initializations; detailed evidence is collected
