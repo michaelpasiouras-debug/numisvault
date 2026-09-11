@@ -27,7 +27,7 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            pip install Flask flask-cors requests beautifulsoup4
+            pip install Flask flask-cors requests beautifulsoup4 'Pillow>=11,<13'
           fi
 
       - name: Full repository structural audit
@@ -71,6 +71,8 @@ jobs:
           python test_multilingual_market_matching.py
           python test_raw_only_api_fallback.py
           python -m unittest test_resolved_query_handoff -v
+          python -m unittest test_coin_photo -v
+          node --check coin-photo.js
           python test_repeated_price_research.py
           python test_coin_search_cache_key.py
           python test_metal_spot_resilience.py
