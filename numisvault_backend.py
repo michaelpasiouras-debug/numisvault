@@ -42,11 +42,17 @@ from price_research_providers import (
 )
 
 app = Flask(__name__)
+from coin_photo import photo_api
+app.register_blueprint(photo_api)
 ALLOWED_ORIGINS=os.environ.get("COINBIDS_CORS_ORIGINS","*").split(",")
 CORS(app, resources={r"/api/*":{"origins":ALLOWED_ORIGINS}}, supports_credentials=False)
 
 
 APP_DIR=os.path.dirname(os.path.abspath(__file__))
+
+@app.get("/coin-photo.js")
+def coin_photo_script():
+    return send_from_directory(APP_DIR,"coin-photo.js")
 
 @app.get("/")
 def public_homepage():
