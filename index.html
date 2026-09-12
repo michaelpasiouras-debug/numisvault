@@ -1245,7 +1245,7 @@ function coinSpecCacheSet(key,match){
  _numistaCache.set(key,{match,at:Date.now()});
 }
 async function getSharedCoinSpecMatch(endpoint,coin,rawQuery,{force=false,signal=null,fast=false}={}){
- const key=coinSpecCacheKey(coin);
+ const key=coinSpecCacheKey(coin)+"|"+String(rawQuery||"").trim().toLowerCase();
  if(!force && key){
    const cached=coinSpecCacheGet(key);
    if(cached)return {match:cached,cached:true,error:null,ambiguous:false,candidates:[]};
@@ -1871,7 +1871,7 @@ function renderOffers(){
  const b=rankable[0]||d[0], include=$('rShipping').value==='include';
  const bt=offerComparableTotal(b);
  $('bestPriceBox').innerHTML=`<strong>Best validated ${include?'all-in':'item-price'} offer:</strong> <span class="price-big">${Number.isFinite(bt)?money(bt,b.currency):'shipping unknown'}</span> from ${esc(b.source)}`+
-   `<div class="muted" style="margin-top:6px">Only the two cheapest validated MA-Shops COIN listings are shown.</div>`;
+   `<div class="muted" style="margin-top:6px">${ma.length===1?'One validated MA-Shops offer was found; no second matching offer is available.':'Up to two cheapest validated MA-Shops coin listings are shown.'}</div>`;
  $('offersList').innerHTML=d.map((o,idx)=>{
    const ship=shippingLabel(o);
    const total=offerComparableTotal(o);

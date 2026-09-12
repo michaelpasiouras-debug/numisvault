@@ -466,7 +466,7 @@ COUNTRY_CANON = {
     "denmark":["denmark","danmark","danemark"],
     "switzerland":["switzerland","suisse","schweiz","svizzera"],
     "australia":["australia"],
-    "canada":["canada"],
+    "canada":["canada","canadian","kanada","cansda","καναδα","καναδας"],
     "bulgaria":["bulgaria"],
     "romania":["romania","roumanie"],
     "hungary":["hungary","magyarorszag","ungarn"],
@@ -765,7 +765,7 @@ def make_queries(payload, resolved_queries=None):
         return str(value).strip() if value is not None else ""
 
     raw = clean_text(payload.get("raw_query") or coin.get("raw"))
-    country = clean_text(coin.get("country"))
+    country = clean_text(coin.get("country") or coin.get("countryEN"))
     denom = clean_text(coin.get("denom") if coin.get("denom") is not None else coin.get("denomination"))
     year = str(coin.get("year") or "").strip()
     variant = clean_text(coin.get("variant"))
@@ -813,9 +813,11 @@ def make_queries(payload, resolved_queries=None):
     if raw and not str(coin.get("theme") or "").strip():
         theme_text=norm(raw)
         if country:
-            cn=norm(country)
-            if cn:
-                theme_text=re.sub(rf"(?<![a-z0-9]){re.escape(cn)}(?![a-z0-9])"," ",theme_text,count=1)
+            country_names=[country]+COUNTRY_CANON.get(canonical_country(country),[])
+            for name in sorted(country_names,key=len,reverse=True):
+                cn=norm(name)
+                if cn:
+                    theme_text=re.sub(rf"(?<![a-z0-9]){re.escape(cn)}(?![a-z0-9])"," ",theme_text,count=1)
         if year:
             # Remove the year together with an optional mintmark suffix such as
             # 1876A / 1876-A / 1876 A so it cannot leak into theme_text.
@@ -1114,49 +1116,26 @@ def theme_match_score(theme_raw, title):
 _ISSUE_COUNTRY_NAME_TO_CODE={"greece":"GR","ελλαδα":"GR","ελλαs":"GR","hellas":"GR","hellenic republic":"GR","vatican":"VA","vatican city":"VA","vatican city state":"VA","holy see":"VA"}
 
 def _theme_issue_gate(coin, title):
-    """Multilingual ISSUE/THEME identity gate — separate from, and does not
-    modify, variant_matches() (which stays literal/English and strict on
-    purpose for controlled condition/type categories like proof/UNC/
-    commemorative). This gate answers a different question: when a query's
-    leftover descriptive text (e.g. "mechanism" from "Greece 10 euros 2022
-    mechanism") clearly identifies ONE SPECIFIC known coin issue among
-    possibly several sharing the same country+denomination+year (looked up
-    in the shared coin_issue_database.json seed via the resolver), a
-    listing must be recognized (via theme_word_matches_title's dictionary+
-    fuzzy matching, not just literal substring) as matching THAT issue's
-    own canonical_title/aliases — in any of several languages/spellings,
-    not just English — to pass. This is what lets "Antikythera-Mechanismus"
-    (German), "Mécanisme d'Anticythère" (French) or a bare "Antikythera"
-    listing all correctly match a query written in English, while a
-    genuinely different Greek 2022 10-euro issue is correctly excluded.
+    """Require the requested theme; curated issue aliases allow translations.
 
-    Returns True (no gate — falls through to existing country/denom/year
-    behavior) whenever:
-      - there is no leftover theme text at all, or
-      - the resolver/issue database is unavailable, or
-      - no issue record for this country+denomination+year has an
-        "aliases" list at all (most issues don't — this is opt-in per
-        issue record, never a blanket new requirement), or
-      - the theme text doesn't clearly pick out one specific such issue
-        (ambiguous or no match against any candidate issue's own
-        canonical_title/aliases) — in which case this gate stays out of
-        the way rather than guessing.
-    Only once a SPECIFIC issue has been identified from the theme text does
-    this function start requiring a recognized match against one of that
-    issue's own aliases in the listing title."""
-    theme_raw=(coin.get("theme") or "").strip()
-    if not theme_raw or not RESOLVER_AVAILABLE:
+    Missing catalogue coverage never authorizes an unrelated issue.
+    """
+    theme_raw=(coin.get("theme") or coin.get("variant") or "").strip()
+    if not theme_raw:
         return True
+    fallback=theme_word_matches_title(theme_raw,title)
+    if not RESOLVER_AVAILABLE:
+        return fallback
     try:
         issues=(get_resolver().issue_db or {}).get("issues") or []
     except Exception:
-        return True
+        return fallback
     if not issues:
-        return True
-    country_n=norm(coin.get("country") or "")
+        return fallback
+    country_n=norm(coin.get("country") or coin.get("countryEN") or "")
     code=next((c for name,c in _ISSUE_COUNTRY_NAME_TO_CODE.items() if name in country_n),None)
     if not code:
-        return True
+        return fallback
     m=re.search(r"(\d+(?:\.\d+)?)",str(coin.get("denom") or coin.get("denomination") or ""))
     denom_val=float(m.group(1)) if m else None
     try:
@@ -1168,7 +1147,7 @@ def _theme_issue_gate(coin, title):
                 and (year_val is None or iss.get("year")==year_val)
                 and iss.get("aliases")]
     if not candidates:
-        return True
+        return fallback
     theme_n=norm(theme_raw)
     matched=None
     for iss in candidates:
@@ -1187,7 +1166,7 @@ def _theme_issue_gate(coin, title):
             if any(al and norm(al) and norm(al) in title_norm for al in known_pool):
                 print(f"[Theme Gate] REJECTED (Unknown requested issue vs known issue): {title!r}")
                 return False
-        return True
+        return fallback
 
     # Mutual exclusion for same-country / same-denomination / same-year
     # commemoratives. Once the query identifies one seeded issue, a listing
@@ -1210,7 +1189,7 @@ def _theme_issue_gate(coin, title):
 
         # --- ΔΙΟΡΘΩΣΗ BUG: Υποστήριξη ξενόγλωσσων aliases (π.χ. Mechanismus) ---
     title_norm = norm(title)
-    extended_aliases = list(matched.get("aliases") or []) + ["mechanismus", "antikythera mechanismus", "mechanismus von antikythera"]
+    extended_aliases = list(matched.get("aliases") or [])
     
     return theme_word_matches_title(theme_raw, title) or any(
         norm(al) in title_norm for al in extended_aliases if al)
@@ -1917,7 +1896,7 @@ def _coin_identity_key(coin):
     country=coin.get("countryEN") or coin.get("country") or ""
     denom=coin.get("denom") or coin.get("denomination") or ""
     return "|".join(str(x or "").strip().lower() for x in (
-        country,denom,coin.get("year"),coin.get("variant")
+        country,denom,coin.get("year"),coin.get("variant"),coin.get("theme")
     ))
 
 def cache_mashops_candidates(coin, offers):
@@ -1961,7 +1940,7 @@ def mashops_spec_fallback(coin, raw_query=""):
         return None
 
     payload={
-        "coin":{"country":country,"countryEN":country,"denom":denom,"year":year,"variant":variant},
+        "coin":{"country":country,"countryEN":country,"denom":denom,"year":year,"variant":variant,"theme":coin.get("theme") or ""},
         "raw_query":raw_query or base_query,
         "asset_type":"COIN",
     }
@@ -2326,7 +2305,7 @@ def persist_mashops_spec(coin,spec):
     denom_value=_spec_denom_value(denom_label)
     try:year=int(str(coin.get("year") or "").strip())
     except Exception:year=None
-    variant=str(coin.get("variant") or coin.get("theme") or "").strip()
+    variant=str(coin.get("theme") or coin.get("variant") or "").strip()
     if not country or denom_value is None or year is None:return False
     if not any(spec.get(k) is not None for k in (
         "composition","primary_metal","fineness_per_mille","weight_g","diameter_mm"
@@ -2433,16 +2412,16 @@ def pg_coin_spec_match(coin):
                   and abs(denomination_value-%s)<0.0001
                   and (year_from is null or %s is null or %s>=year_from)
                   and (year_to is null or %s is null or %s<=year_to)
-                  and (%s='' or coalesce(variant,'')='' or lower(variant)=lower(%s))
+                  and (%s='' or lower(variant)=lower(%s))
                 order by
                   case when lower(coalesce(variant,''))=lower(%s) then 1 else 0 end desc,
                   source_priority desc, confidence desc
                 limit 1
                 """,
                 (country,denom,year,year,year,year,
-                 str(coin.get("variant") or coin.get("theme") or "").strip(),
-                 str(coin.get("variant") or coin.get("theme") or "").strip(),
-                 str(coin.get("variant") or coin.get("theme") or "").strip()),
+                 str(coin.get("theme") or coin.get("variant") or "").strip(),
+                 str(coin.get("theme") or coin.get("variant") or "").strip(),
+                 str(coin.get("theme") or coin.get("variant") or "").strip()),
             )
             row=cur.fetchone()
             if not row:return None
@@ -2486,6 +2465,8 @@ def local_coin_spec_match(coin):
         if abs(float(r.get("denomination",-999))-denom)>1e-6:continue
         yf=r.get("year_from"); yt=r.get("year_to")
         if year is not None and ((yf is not None and year<int(yf)) or (yt is not None and year>int(yt))):continue
+        requested_theme=str(coin.get("theme") or coin.get("variant") or "").strip()
+        if requested_theme and not theme_word_matches_title(requested_theme, str(r.get("variant") or r.get("title") or "")):continue
         return {
             "id":None,"title":f"{coin.get('denom','')} {coin.get('countryEN') or coin.get('country','')} {coin.get('year','')}".strip(),
             "issuer":"","composition":r.get("composition"),"weight_g":r.get("weight_g"),
@@ -2754,11 +2735,13 @@ def validate_numista_detail(target, detail, issues):
 @app.post("/api/coin-lookup")
 def coin_lookup():
     payload=request.get_json(silent=True) or {};coin=payload.get("coin") or {}
+    coin=dict(coin)
+    make_queries({"coin":coin,"raw_query":payload.get("raw_query") or coin.get("raw") or ""})
     if _modern_us_dollar(coin):
         description=norm(" ".join(str(coin.get(k) or "") for k in ("raw","variant","theme"))+" "+str(payload.get("raw_query") or ""))
         if not any(term in description for term in ("eagle","constitution","verfassung","sacagawea","presidential","innovation","native american","susan","commemorative")):
             return jsonify({"match":None,"ambiguous":True,"candidates":[],"note":"Several US one-dollar coin types exist. Specify the issue (for example Silver Eagle or Constitution for 1987) before calculating metal content."})
-    query=" ".join(str(x) for x in [coin.get("countryEN") or coin.get("country"),coin.get("denom"),coin.get("year"),coin.get("variant")] if x).strip()
+    query=" ".join(str(x) for x in [coin.get("countryEN") or coin.get("country"),coin.get("denom"),coin.get("year"),coin.get("theme") or coin.get("variant")] if x).strip()
     if not query:query=(payload.get("raw_query") or "").strip()
     if not query:return jsonify({"error":"empty query"}),400
     # Database first: a complete local record satisfies the request without
@@ -2826,6 +2809,8 @@ def coin_lookup():
         # for these cuts real API usage without changing which candidates
         # ultimately validate.
         precheck_reasons=validate_numista_detail_precheck(coin,detail)
+        if not _theme_issue_gate(coin,str(numista_pick(detail,"title") or "")):
+            precheck_reasons.append("THEME_MISMATCH")
         if precheck_reasons:
             rejected.append({"id":tid,"title":numista_pick(detail,"title") or numista_pick(cand,"title"),"reasons":precheck_reasons})
             numista_calls_saved+=1

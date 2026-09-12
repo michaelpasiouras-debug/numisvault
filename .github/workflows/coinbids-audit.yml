@@ -71,7 +71,7 @@ jobs:
           python test_multilingual_market_matching.py
           python test_raw_only_api_fallback.py
           python -m unittest test_resolved_query_handoff -v
-          python -m unittest test_us_dollar_assets -v
+          python -m unittest test_us_dollar_assets test_canada_issue_identity -v
           python -m unittest test_coin_photo -v
           node --check coin-photo.js
           python test_repeated_price_research.py
