@@ -116,8 +116,8 @@ def run():
           backend.passes_hard_filter("Greece 5 Drachmai 1901", {"coin": no_theme_coin}) is True)
 
     unrelated_theme_coin = {"country": "Greece", "denom": "5 drachma", "year": "1901", "theme": "mechanism", "variant": ""}
-    check("theme present but no matching issue record for this country+denom+year -> gate does not block",
-          backend.passes_hard_filter("Greece 5 Drachmai 1901 UNC", {"coin": unrelated_theme_coin}) is True)
+    check("theme without catalogue coverage still rejects an unrelated issue",
+          backend.passes_hard_filter("Greece 5 Drachmai 1901 UNC", {"coin": unrelated_theme_coin}) is False)
     print("  OK  (see FAILURES below if any)")
 
     # ------------------------------------------------------------------

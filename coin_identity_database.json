@@ -3053,6 +3053,42 @@
           }
         }
       ]
+    },
+    {
+      "name": "Canada",
+      "code": "CA",
+      "aliases": [
+        "canada",
+        "canadian",
+        "kanada",
+        "cansda",
+        "καναδάς",
+        "καναδα",
+        "καναδας"
+      ],
+      "currencies": [
+        {
+          "name": "Canadian dollar",
+          "code": "CAD",
+          "aliases": [
+            "canadian dollar",
+            "canadian dollars",
+            "cad",
+            "dollar",
+            "dollars"
+          ],
+          "valid_from": 1858,
+          "valid_to": null,
+          "subunit": {
+            "name": "cent",
+            "aliases": [
+              "cent",
+              "cents"
+            ]
+          },
+          "special_denominations": []
+        }
+      ]
     }
   ],
   "generic_terms": {
