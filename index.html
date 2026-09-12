@@ -1294,7 +1294,8 @@ async function fetchCatalogLookup(endpoint,t,researchToken){
    if(token!==currentCatalogToken || (researchToken!=null && researchToken!==currentResearchToken)) return;
    if(rr.error && !rr.ambiguous && rr.error.startsWith('HTTP ')){ box.innerHTML=`<span style="color:var(--red)">Coin specification ${esc(rr.error)}</span>`; return; }
    if(rr.ambiguous){
-     box.innerHTML='<strong>Multiple exact catalogue candidates.</strong><div class="muted" style="margin-top:6px">Add the issue/theme to your search so CoinBids does not choose arbitrarily.</div>'+
+     $('mResultBox').textContent=rr.data?.note||'Specify the issue or coin type before calculating metal content.';
+     box.innerHTML='<strong>Coin type needs clarification.</strong><div class="muted" style="margin-top:6px">'+esc(rr.data?.note||'Add the issue/theme to your search so CoinBids does not choose arbitrarily.')+'</div>'+
        (rr.candidates||[]).slice(0,5).map(c=>`<div style="margin-top:8px">${esc(c.title||'—')}${c.url?` — <a class="searchlink" href="${esc(c.url)}" target="_blank" rel="noopener">Catalogue source</a>`:''}</div>`).join('');
      return;
    }

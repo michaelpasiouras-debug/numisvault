@@ -702,6 +702,8 @@ def denomination_matches(target, title):
 
 def classify_asset(title):
     a=norm(title)
+    if re.search(r'\b(?:banknotes?|banknoten?|bank note|paper money|silver certificate|federal reserve|notgeldschein|geldschein|voucher|disney dollars?|pmg)\b',a):
+        return "BANKNOTE",.99
     bank=sum(1 for x in BANKNOTE_TERMS if x in a)
     coin=sum(1 for x in COIN_TERMS if x in a)
     other=sum(1 for x in NON_COIN_PRODUCT_TERMS if x in a)
@@ -1255,6 +1257,14 @@ def passes_hard_filter(title, payload):
 
     country = str(coin.get("country") or "").strip()
     raw_query = str(payload.get("raw_query") or coin.get("raw") or "")
+    if canonical_country(country)=="united states" and "dollar" in norm(denom):
+        # Grade words (UNC/Proof) also occur on paper money. Unknown dollar
+        # listings cannot be promoted to coins merely by matching year/value.
+        if not re.search(r'\b(?:coin|munze|münze|peace|morgan|eagle|eisenhower|susan b|sacagawea|presidential|native american|innovation|constitution|verfassung|silber|silver|gold)\b',a):
+            return False
+        for family in ("eagle", "peace", "morgan", "constitution", "eisenhower", "sacagawea"):
+            if family in norm(raw_query+" "+str(coin.get("variant") or "")) and family not in a:
+                return False
 
        # Country is a hard constraint only when the user explicitly supplied it.
     # A country inferred by the identity resolver is evidence for ranking and
@@ -2395,7 +2405,13 @@ def persist_mashops_spec(coin,spec):
     finally:
         _release_pg_connection(conn)
 
+def _modern_us_dollar(coin):
+    try:year=int(coin.get("year") or 0)
+    except (ValueError,TypeError):return False
+    return canonical_country(coin.get("countryEN") or coin.get("country") or "")=="united states" and _spec_denom_value(coin.get("denom"))==1 and year>=1986
+
 def pg_coin_spec_match(coin):
+    if _modern_us_dollar(coin):return None
     if not DATABASE_URL:return None
     country=str(coin.get("countryEN") or coin.get("country") or "").strip()
     year_txt=str(coin.get("year") or "").strip()
@@ -2457,6 +2473,7 @@ def _spec_denom_value(text):
     return round(v,4)
 
 def local_coin_spec_match(coin):
+    if _modern_us_dollar(coin):return None
     country=str(coin.get("countryEN") or coin.get("country") or "").strip().lower()
     year_txt=str(coin.get("year") or "").strip()
     try: year=int(year_txt) if year_txt else None
@@ -2737,6 +2754,10 @@ def validate_numista_detail(target, detail, issues):
 @app.post("/api/coin-lookup")
 def coin_lookup():
     payload=request.get_json(silent=True) or {};coin=payload.get("coin") or {}
+    if _modern_us_dollar(coin):
+        description=norm(" ".join(str(coin.get(k) or "") for k in ("raw","variant","theme"))+" "+str(payload.get("raw_query") or ""))
+        if not any(term in description for term in ("eagle","constitution","verfassung","sacagawea","presidential","innovation","native american","susan","commemorative")):
+            return jsonify({"match":None,"ambiguous":True,"candidates":[],"note":"Several US one-dollar coin types exist. Specify the issue (for example Silver Eagle or Constitution for 1987) before calculating metal content."})
     query=" ".join(str(x) for x in [coin.get("countryEN") or coin.get("country"),coin.get("denom"),coin.get("year"),coin.get("variant")] if x).strip()
     if not query:query=(payload.get("raw_query") or "").strip()
     if not query:return jsonify({"error":"empty query"}),400
