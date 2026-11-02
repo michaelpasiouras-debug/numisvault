@@ -2968,7 +2968,7 @@
               ]
             },
             {
-              "value": 1.0,
+              "value": 1,
               "unit": "USD",
               "aliases": [
                 "dollar coin",
@@ -2988,7 +2988,7 @@
               "historical": true
             },
             {
-              "value": 5.0,
+              "value": 5,
               "unit": "USD",
               "aliases": [
                 "half eagle",
@@ -2997,7 +2997,7 @@
               "historical": true
             },
             {
-              "value": 10.0,
+              "value": 10,
               "unit": "USD",
               "aliases": [
                 "eagle",
@@ -3006,7 +3006,7 @@
               "historical": true
             },
             {
-              "value": 20.0,
+              "value": 20,
               "unit": "USD",
               "aliases": [
                 "double eagle",
@@ -3089,6 +3089,44 @@
           "special_denominations": []
         }
       ]
+    },
+    {
+      "name": "Yugoslavia",
+      "code": "YU",
+      "aliases": [
+        "yugoslavia",
+        "jugoslawien",
+        "jugoslavija",
+        "yougoslavie",
+        "yugoslavian",
+        "γιουγκοσλαβία",
+        "γιουγκοσλαβια",
+        "југославија"
+      ],
+      "currencies": [
+        {
+          "name": "Yugoslav dinar",
+          "code": "YUD",
+          "aliases": [
+            "dinar",
+            "dinara",
+            "dinars",
+            "yugoslav dinar",
+            "δηνάρια",
+            "δηναρια"
+          ],
+          "valid_from": 1918,
+          "valid_to": 1941,
+          "subunit": {
+            "name": "para",
+            "aliases": [
+              "para"
+            ]
+          },
+          "special_denominations": []
+        }
+      ],
+      "sources_note": "Interwar dinar only (1918–1941); later redenominations are not covered by this entry. https://en.numista.com/catalogue/yugoslavia_section-2.html ; https://nbs.rs/en/o_nbs/jub140/jub_ist/"
     }
   ],
   "generic_terms": {
