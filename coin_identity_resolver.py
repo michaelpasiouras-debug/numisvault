@@ -2,7 +2,7 @@ from __future__ import annotations
 import json, re, unicodedata
 from pathlib import Path
 from difflib import SequenceMatcher
-from multilingual_country_aliases import normalize_country_aliases_in_text
+from multilingual_country_aliases import normalize_country_aliases_in_text, canonical_country_name
 
 DB_PATH = Path(__file__).with_name("coin_identity_database.json")
 ISSUE_DB_PATH = Path(__file__).with_name("coin_issue_database.json")
@@ -622,6 +622,15 @@ class CoinIdentityResolver:
                 extra.append(x)
         candidates=sorted(list(by_core.values())+extra,key=lambda x:x["confidence"],reverse=True)
 
+        # Country-name coverage and monetary-history coverage are separate.
+        # A missing catalogue entry must never authorize replacing an explicitly
+        # named country with another country's shared currency (dollar/dinar).
+        input_country=canonical_country_name(original)
+        coverage_gap=bool(input_country and not any(
+            norm(c["name"])==norm(input_country) for c in self.countries))
+        if coverage_gap:
+            candidates=[]
+
         # Detect ambiguous currencies like generic "franc" or "euro" without country.
         top=candidates[0] if candidates else None
         ambiguous=False
@@ -664,6 +673,8 @@ class CoinIdentityResolver:
                 status="review"
 
         return {
+            "input_country":input_country,
+            "catalogue_coverage_gap":coverage_gap,
             "raw":original,
             "normalized":text,
             "transliterated":latin,

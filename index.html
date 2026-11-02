@@ -1090,38 +1090,6 @@ function metalIntelligenceHTML(prefix,title='Metal Intelligence'){
    <div id="${prefix}MetalNote" class="muted" style="margin-top:8px">Metal data will appear after a catalogue/specification match is identified.</div>
  </div>`;
 }
-async function populateMetalIntelligence(prefix,match){
- const comp=typeof match?.composition==='string'?match.composition:'';
- const parsed=parseNumistaComposition(comp);
- const weight=Number(match?.weight_g)||0;
- const fineness=Number(parsed.fineness)||0;
- const fine=(weight>0&&fineness>0)?weight*fineness/1000:0;
- const set=(suffix,val)=>{const el=$(prefix+suffix);if(el)el.value=val??'—';};
- set('Metal',parsed.precious?parsed.label:(comp?'Common alloy':'—'));
- set('Weight',weight?String(weight):'—');
- set('Fineness',fineness?String(fineness):'—');
- set('Fine',fine?fine.toFixed(3):'—');
- set('Composition',comp||'—');
- set('Melt','—');
- const note=$(prefix+'MetalNote');
- if(!comp){if(note)note.textContent='No composition data was returned by the available specification source.';return;}
- if(!parsed.precious){if(note)note.textContent='Common alloy detected — no precious-metal melt value.';return;}
- if(!weight||!fineness){if(note)note.textContent='Precious metal detected, but weight or fineness is missing. CoinBids will not guess it.';return;}
- if(!['gold','silver'].includes(parsed.metal)){if(note)note.textContent=`Fine metal: ${fine.toFixed(3)} g. Live melt pricing is currently automatic only for silver and gold.`;return;}
- try{
-   if(note)note.textContent='Fetching live metal price...';
-   const [spot,eurRate]=await Promise.all([fetchSpotPricesUSD(),fetchUsdToEur()]);
-   const usdPerOz=parsed.metal==='gold'?spot.gold:spot.silver;
-   if(!usdPerOz)throw new Error('No live metal price found.');
-   const eurPerGram=(usdPerOz/31.1034768)*eurRate;
-   const value=fine*eurPerGram;
-   set('Melt',money(value,'EUR'));
-   if(note)note.innerHTML=`${fine.toFixed(3)} g fine ${esc(parsed.label.toLowerCase())} × ${money(eurPerGram,'EUR')}/g = <strong>${money(value,'EUR')}</strong>. Intrinsic metal value only; separate from numismatic market value.`;
- }catch(err){
-   if(note)note.textContent='Metal content calculated, but live melt price could not be fetched.';
- }
-}
-
 async function intrinsicMetalValueEUR(match){
  const comp=typeof match?.composition==='string'?match.composition:'';
  const parsed=parseNumistaComposition(comp);
@@ -1137,7 +1105,8 @@ async function intrinsicMetalValueEUR(match){
  }catch(e){return null}
 }
 
-async function populateMetalIntelligence(prefix,match){
+async function populateMetalIntelligence(prefix,match,isCurrent=()=>true){
+ if(!isCurrent())return;
  const comp=typeof match?.composition==='string'?match.composition:'';
  const parsed=parseNumistaComposition(comp);
  const weight=Number(match?.weight_g)||0;
@@ -1158,6 +1127,7 @@ async function populateMetalIntelligence(prefix,match){
  try{
    if(note)note.textContent='Fetching live metal price...';
    const [spot,eurRate]=await Promise.all([fetchSpotPricesUSD(),fetchUsdToEur()]);
+   if(!isCurrent())return;
    const usdPerOz=parsed.metal==='gold'?spot.gold:spot.silver;
    if(!usdPerOz)throw new Error('No live metal price found.');
    const eurPerGram=(usdPerOz/31.1034768)*eurRate;
@@ -1165,6 +1135,7 @@ async function populateMetalIntelligence(prefix,match){
    set('Melt',money(value,'EUR'));
    if(note)note.innerHTML=`${fine.toFixed(3)} g fine ${esc(parsed.label.toLowerCase())} × ${money(eurPerGram,'EUR')}/g = <strong>${money(value,'EUR')}</strong>. Intrinsic metal value only; separate from numismatic market value.`;
  }catch(err){
+   if(!isCurrent())return;
    if(note)note.textContent='Metal content calculated, but live melt price could not be fetched.';
  }
 }
@@ -1273,7 +1244,6 @@ async function getSharedCoinSpecMatch(endpoint,coin,rawQuery,{force=false,signal
    const m=data.match||null;
    if(m){
      coinSpecCacheSet(key,m);
-     window.dispatchEvent(new CustomEvent('coinbids:numista-match',{detail:m}));
    }
    return {match:m,cached:false,error:m?null:(data.note||data.error||'No reliable coin specification match found.'),ambiguous:false,candidates:[],data};
  }catch(e){
@@ -1397,6 +1367,40 @@ async function fetchCatalogLookup(endpoint,t,researchToken){
    box.innerHTML=`<span style="color:var(--red)">Coin specification lookup failed:</span> ${esc(err.name==='AbortError'?'request timed out':(err.message||String(err)))}`;
  }
 }
+// One decision policy for both research screens. Local parsing may support
+// provisional research, but may not override ambiguity, period conflicts or
+// an explicitly different country. It never supplies physical specifications.
+function researchIdentityDecision(local,raw,data){
+ const b=data?.best;
+ const negative=data?.negative_flags||b?.negative_flags||[];
+ const complete=!!(local.country&&local.denom&&local.year);
+ const parsedCountry=toEnglishTerms(local).country||local.country||'';
+ const countryConflict=!!(b?.country&&parsedCountry&&normLite(b.country)!==normLite(parsedCountry));
+ const periodConflict=(b?.reasons||[]).some(x=>/year (before|after) currency period/.test(x));
+ const blocked=negative.length>0||!!data?.ambiguous||countryConflict||periodConflict;
+ if(!blocked&&data?.status==='resolved'&&b){
+   const denom=local.denom||(b.denomination_value!=null?`${Number(b.denomination_value)} ${b.currency||b.currency_code||''}`.trim():'');
+   const parsed={...local,raw,country:b.country||local.country||'',countryEN:b.country||parsedCountry,denom,year:String(b.year||local.year||'')};
+   return {ok:!!(parsed.country&&parsed.denom&&parsed.year),parsed,resolution:data,searchVariants:b.search_variants||[]};
+ }
+ return {ok:!blocked&&complete,parsed:{...local,raw},resolution:data,searchVariants:[],provisional:true};
+}
+function marketAvailabilityMessage(data){
+ const statuses=Object.values(data?.provider_statuses||{});
+ const failed=statuses.some(s=>s==='unavailable'||s==='error');
+ const errors=Array.isArray(data?.errors)?data.errors:[];
+ if(failed || (!statuses.length&&errors.length)){
+   return {title:'Market source unavailable.',detail:'The source did not supply usable search results. This does not mean that no matching coin is for sale. Verified catalogue specifications are checked separately.'};
+ }
+ return null;
+}
+function resetResearchMetalDisplay(){
+ for(const id of ['mWeight','mFineness','mValue'])if($(id))$(id).value='';
+ for(const id of ['mFineGrams','mComposition'])if($(id))$(id).value='—';
+ if($('mMetal'))$('mMetal').value='none';
+ if($('mResultBox'))$('mResultBox').textContent='Waiting for verified coin specifications.';
+ if($('catalogBox'))$('catalogBox').textContent='—';
+}
 async function resolveCoinViaBackend(raw,endpoint,{signal=null}={}){
  // Shared Coin Identity Resolver — used by Identify Coin, Price Research and
  // Auction Intelligence so all three interpret spelling/transliteration/
@@ -1423,25 +1427,12 @@ async function resolveCoinViaBackend(raw,endpoint,{signal=null}={}){
    }
    const data=await res.json().catch(()=>({}));
    if(!res.ok) throw new Error(data.error||('HTTP '+res.status));
-   if(data.status==='resolved' && data.best){
-     const b=data.best;
-     // IMPORTANT: keep parseCoinText()'s canonical, machine-filterable
-     // denomination when the user actually supplied one ("5 drachma",
-     // "5 δραχμές" -> "5 drachma").  The resolver's `currency` field is a
-     // human-readable display label ("Greek drachma", "Deutsche Mark"), so
-     // constructing "5 Greek drachma" used to make the backend denomination
-     // parser fail and silently disable the hard denomination gate.
-     let denom=local.denom||'';
-     if(!denom && b.denomination_value!=null){
-       denom=`${Number(b.denomination_value)} ${b.currency||b.currency_code||''}`.trim();
-     }
-     return {ok:true,parsed:{...local,raw,country:b.country||local.country||'',denom,year:String(b.year||local.year||''),variant:local.variant||'',grade:local.grade||''},resolution:data,searchVariants:b.search_variants||[]};
-   }
-   return {ok:false,parsed:local,resolution:data,searchVariants:[]};
+   return researchIdentityDecision(local,raw,data);
+
  }catch(e){
    // Resolver unreachable/timed out — fall back to the local parser rather
    // than blocking the whole page; only proceed if it found enough to work with.
-   return {ok:!!(local.country&&local.denom&&local.year),parsed:local,resolution:null,searchVariants:[],error:e};
+   return {...researchIdentityDecision(local,raw,null),error:e};
  }
 }
 function identityReviewHtml(resolution){
@@ -1468,6 +1459,7 @@ async function buildResearch(){
    activeCatalogLookupController=null;
  }
  currentCatalogToken++;
+ resetResearchMetalDisplay();
 
  if($('rMarketValue')) $('rMarketValue').value='';
  if($('rMarketSource')) $('rMarketSource').value='MA-Shops';
@@ -1484,54 +1476,8 @@ async function buildResearch(){
    if(rr.ok){
      t=rr.parsed;
    }else{
-     // IMPORTANT: Price Research is NOT gated by a resolver REVIEW verdict.
-     // The local free-text parser, resolver candidates and raw query are all
-     // evidence sources. A REVIEW may mean "not confident enough to identify
-     // categorically", but it must not prevent market research when we can form
-     // a useful coin query. Dangerous negative-product flags remain blocking.
-     const negative=(rr.resolution?.negative_flags||rr.resolution?.best?.negative_flags||[]);
-     if(negative.length){
-       $('bestPriceBox').innerHTML=identityReviewHtml(rr.resolution);
-       return;
-     }
-
-     // If the local parser has denomination/year but no country, recover a
-     // country from a genuinely unambiguous resolver candidate set.
-     const cs=(rr.resolution?.candidates||[]).filter(Boolean);
-     if(!t.country && cs.length){
-       const y=String(t.year||'');
-       const valueMatch=String(t.denom||'').match(/^(\d+(?:\.\d+)?)\s+(.+)$/i);
-       const wantedValue=valueMatch?Number(valueMatch[1]):null;
-       const wantedUnit=valueMatch?normLite(valueMatch[2]):'';
-       const compatible=cs.filter(c=>{
-         if(y && c.year && String(c.year)!==y)return false;
-         if(wantedValue!=null && c.denomination_value!=null && Number(c.denomination_value)!==wantedValue)return false;
-         if(wantedUnit && c.currency){
-           const cu=normLite(c.currency);
-           const aliases={drachma:['drachma','grd'],dollar:['dollar','usd'],euro:['euro','eur'],forint:['forint','huf'],zloty:['zloty','pln'],yen:['yen','jpy'],yuan:['yuan','cny'],kuna:['kuna','hrk'],lev:['lev','bgn'],leu:['leu','ron']};
-           const ok=(aliases[wantedUnit]||[wantedUnit]).some(a=>cu.includes(a));
-           if(!ok)return false;
-         }
-         return !!c.country;
-       });
-       const countries=[...new Set(compatible.map(c=>String(c.country||'').trim()).filter(Boolean))];
-       if(countries.length===1){
-         t={...t,country:countries[0],countryEN:countries[0]};
-       }
-     }
-
-     // Currency names that are country-unique in normal modern/collector use.
-     // This is a conservative fallback, not a giant alias dictionary. Ambiguous
-     // currencies such as dollar/franc/lira/dinar/krona/euro are intentionally
-     // excluded and must be resolved by text/candidates/backend filtering.
-     if(!t.country && t.denom){
-       const unit=normLite(String(t.denom).replace(/^\s*\d+(?:[.,]\d+)?\s*/,''));
-       const uniqueCurrencyCountry={
-         drachma:'Greece',forint:'Hungary',zloty:'Poland',yen:'Japan',yuan:'China',
-         kuna:'Croatia',lev:'Bulgaria',leu:'Romania'
-       };
-       if(uniqueCurrencyCountry[unit]) t={...t,country:uniqueCurrencyCountry[unit],countryEN:uniqueCurrencyCountry[unit]};
-     }
+     $('bestPriceBox').innerHTML=identityReviewHtml(rr.resolution);
+     return;
    }
 
    if($('rCountry')) $('rCountry').value=t.countryEN||t.country||'';
@@ -1559,14 +1505,12 @@ async function buildResearch(){
  }
  $('researchQueries').innerHTML=html;renderOffers();
  renderOwnedBox(checkOwnCollection(t));
- // Complete Price Research first, then let the specification lookup reuse
- // its already identity-validated MA-Shops candidates. Running both requests
- // concurrently caused a race where the spec request could be WAF-blocked and
- // show "Specifications unavailable" even though the price request succeeded.
- await autoResearch(ep,tEN,researchToken);
- if(researchToken===currentResearchToken){
-   await fetchCatalogLookup(ep,tEN,researchToken);
- }
+ // Market availability and verified specifications are independent. A slow
+ // or failed source must not delay database results or keep stale metals visible.
+ await Promise.allSettled([
+   autoResearch(ep,tEN,researchToken),
+   fetchCatalogLookup(ep,tEN,researchToken)
+ ]);
 }
 $('researchBtn').onclick=()=>{captureResearchState();return buildResearch()};
 ['rFreeText','rCurrency','rGrade','rShipping','rShipTo'].forEach(id=>{
@@ -1720,8 +1664,9 @@ async function autoResearch(endpoint,t,researchToken){
      if($('rMarketChecked')) $('rMarketChecked').value=new Date().toLocaleString('el-GR');
    }else{
      const sourceErrors=Array.isArray(data.errors)?data.errors:[];
+     const availability=marketAvailabilityMessage(data);
      const maBlocked=sourceErrors.some(e=>/human-verification|anti-bot|captcha|checkpoint/i.test(String((e&&e.error)||'')));
-     if($('rMarketValue')) $('rMarketValue').value=maBlocked?'MA-Shops temporarily unavailable':'No exact validated match';
+     if($('rMarketValue')) $('rMarketValue').value=availability?'Market source unavailable':maBlocked?'MA-Shops temporarily unavailable':'No exact validated match';
      const diag=data.diagnostics||{};
      const rejects=Array.isArray(diag.cheap_rejections)?diag.cheap_rejections:[];
      const reasonCounts={};
@@ -1733,10 +1678,12 @@ async function autoResearch(endpoint,t,researchToken){
        explanation=`MA-Shops returned ${data.raw_count||diag.raw_candidates_found} candidate listing(s), but none matched all the identity details you explicitly entered.`;
        if(topReasons.length) explanation+=` Main rejection reasons: ${topReasons.join(', ')}.`;
        explanation+=' Check the year/type combination if you expected a result.';
+     }else if(availability){
+       explanation=availability.detail;
      }else if(maBlocked){
        explanation='MA-Shops returned a human-verification / anti-bot checkpoint instead of search results. CoinBids did not receive any listings to validate, so this is a source-availability problem — not evidence that the coin has no matching offers.';
      }else explanation='MA-Shops returned no candidate listings for this exact search.';
-     const noMatchTitle=maBlocked?'MA-Shops temporarily unavailable.':'No exact validated match.';
+     const noMatchTitle=availability?.title||(maBlocked?'MA-Shops temporarily unavailable.':'No exact validated match.');
      $('bestPriceBox').innerHTML=`<strong>${noMatchTitle}</strong><div class="muted" style="margin-top:7px">${esc(explanation)}</div>`;
    }
    renderOffers();
@@ -1790,21 +1737,10 @@ async function fetchUsdToEur(){
  return x.eur;
 }
 
-window.addEventListener('coinbids:numista-match',e=>{
- const m=e.detail||{};
- const active=document.querySelector('.tab-section.active,.tab-pane.active,.view.active,[data-view].active');
- const activeId=(active?.id||'').toLowerCase();
- if(activeId.includes('identify')){
-   if($('identifyMetalCard'))$('identifyMetalCard').style.display='';
-   populateMetalIntelligence('identify',m);
- }
- if(activeId.includes('auction')){
-   if($('auctionMetalCard'))$('auctionMetalCard').style.display='';
-   populateMetalIntelligence('auction',m);
- }
-});
-
 async function calculateMainMetalValueAuto(){
+ const runToken=currentResearchToken;
+ const snapshot=['mMetal','mWeight','mFineness'].map(id=>$(id)?.value).join('|');
+ const isCurrent=()=>runToken===currentResearchToken&&snapshot===['mMetal','mWeight','mFineness'].map(id=>$(id)?.value).join('|');
  const box=$('mResultBox'), metal=$('mMetal')?.value||'none';
  if(!box)return;
  if(metal==='none'){
@@ -1830,6 +1766,7 @@ async function calculateMainMetalValueAuto(){
  box.textContent='Calculating live intrinsic metal value automatically...';
  try{
    const spotData=await fetchMetalSpotFromBackend();
+   if(!isCurrent())return;
    const spot={gold:spotData.gold,silver:spotData.silver,platinum:spotData.platinum,palladium:spotData.palladium,source:spotData.source,fxSource:spotData.fxSource};
    const eurRate=spotData.eur;
    const usdPerOz=spot[metal];
@@ -1840,6 +1777,7 @@ async function calculateMainMetalValueAuto(){
    box.innerHTML=`${fineGrams.toFixed(3)} g fine ${esc(metal)} × ${money(eurPerGram,'EUR')}/g = <strong>${money(value,'EUR')}</strong>. `+
      `Metal spot: <strong>${esc(spot.source||'live spot feed')}</strong> · FX: <strong>${esc(spot.fxSource||'ECB')}</strong> · ${esc(new Date().toLocaleString('en-GB'))}. Intrinsic metal value only; separate from numismatic market value.`;
  }catch(err){
+   if(!isCurrent())return;
    if($('mValue'))$('mValue').value='—';
    box.innerHTML='<span class="warn">Metal content is known, but the live spot price could not be fetched automatically.</span>';
  }
@@ -2082,6 +2020,7 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
  }
  const auctionCtrl=new AbortController();activeAuctionController=auctionCtrl;
  const auctionToken=++currentAuctionToken;
+ if($('auctionMetalCard'))$('auctionMetalCard').style.display='none';
  const q=$('aCoin').value.trim();if(!q)return alert('Enter a coin.');
  const ep=localStorage.getItem('coinbids_api_endpoint')||localStorage.getItem('numisvault_api_endpoint')||defaultApiEndpoint();
  const box=$('auctionResult');box.innerHTML='Resolving coin identity...';
@@ -2089,27 +2028,28 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
  if(auctionToken!==currentAuctionToken)return;
  if(!rr.ok){box.innerHTML=identityReviewHtml(rr.resolution);return}
  const parsed=rr.parsed;
- const resolvedBest=rr.resolution?.best||null;
+ const resolvedBest=rr.resolution?.status==='resolved'?rr.resolution.best:null;
  box.innerHTML=`${resolvedBest?`<div class="notice" style="margin-bottom:10px"><strong>Resolved:</strong> ${esc(resolvedBest.country)} · ${resolvedBest.denomination_value!=null?esc(String(resolvedBest.denomination_value))+' ':''}${esc(resolvedBest.currency)} · ${esc(String(resolvedBest.year||''))} · confidence ${Math.round((resolvedBest.confidence||0)*100)}%</div>`:''}Gathering validated current-market evidence...`;
- // Fast local catalogue lookup only: automatically resolve verified physical/metal specs
- // without starting a slow external specification crawl on the interactive path.
+ // Start catalogue work independently of market availability.
  let auctionSpecMatch=null, auctionMetalFloor=null;
  if($('auctionMetalCard'))$('auctionMetalCard').style.display='none';
+ const auctionSpecTask=(async()=>{
  try{
    const b=resolvedBest||{}, c=parsed||{};
    const specCoin={countryEN:b.country||c.country,denom:c.denom,year:c.year,variant:c.variant||'',
      catalogIds:b.catalog_ids||null,themeHint:(b.variants||[]).join(' ')};
-   const specResult=await getSharedCoinSpecMatch(ep,specCoin,q,{signal:auctionCtrl.signal,fast:true});
+   const specResult=await getSharedCoinSpecMatch(ep,specCoin,q,{signal:auctionCtrl.signal,fast:false});
    if(auctionToken!==currentAuctionToken)return;
    if(specResult?.match){
      auctionSpecMatch=specResult.match;
      if($('auctionMetalCard'))$('auctionMetalCard').style.display='';
-     await populateMetalIntelligence('auction',auctionSpecMatch);
+     await populateMetalIntelligence('auction',auctionSpecMatch,()=>auctionToken===currentAuctionToken);
      auctionMetalFloor=await intrinsicMetalValueEUR(auctionSpecMatch);
    }
  }catch(specErr){
-   // Specification evidence is additive. A missing/failed fast lookup must not block auction analysis.
+   // Specification evidence is additive. A missing/failed lookup must not block auction analysis.
  }
+ })();
  try{
    // Auction Intelligence MUST use the same canonical identity evidence as
    // Price Research.  Passing only the locally parsed country/year/denom can
@@ -2151,7 +2091,9 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    const unknownShippingOffers=(data.offers||[]).filter(o=>o.total==null&&Number.isFinite(Number(o.price)));
    const realized=parseComparableAmounts();
    const evidence=realized.length?realized:dealerSample;
-   if(!evidence.length){box.innerHTML='<span class="warn">Insufficient validated price data. CoinBids will not invent an auction value.</span>';return}
+   if(!evidence.length){const unavailable=marketAvailabilityMessage(data);box.innerHTML=unavailable?`<span class="warn"><strong>${esc(unavailable.title)}</strong> ${esc(unavailable.detail)}</span>`:'<span class="warn">Insufficient validated price data. CoinBids will not invent an auction value.</span>';return}
+   await auctionSpecTask;
+   if(auctionToken!==currentAuctionToken)return;
    const p25=quantile(evidence,.25),p50=median(evidence),p75=quantile(evidence,.75);
    const marketMed=median(dealerSample), realizedMed=median(realized);
    // Canonical live purchase anchor: use the SAME selection rule as Price Research.
@@ -2201,7 +2143,7 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
    // Shipping is automatic: use the median known shipping charge from validated matching listings.
    // If no validated shipping evidence exists, keep it at 0 but explicitly treat that as unavailable,
    // not as evidence that shipping is free.
-   const knownShipping=(data.offers||[]).map(o=>Number(o.shipping)).filter(x=>Number.isFinite(x)&&x>=0);
+   const knownShipping=(data.offers||[]).filter(o=>o.shipping!=null&&o.shipping!=='').map(o=>Number(o.shipping)).filter(x=>Number.isFinite(x)&&x>=0);
    const autoShipping=knownShipping.length?median(knownShipping):0;
    if($('aShipping'))$('aShipping').value=autoShipping.toFixed(2);
    const shippingKnown=knownShipping.length>0;

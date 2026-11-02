@@ -70,6 +70,8 @@ jobs:
           python test_multilingual_country_resolution.py
           python test_multilingual_market_matching.py
           python test_raw_only_api_fallback.py
+          python -m unittest test_research_contracts -v
+          node test_research_ui_contracts.js
           python -m unittest test_resolved_query_handoff -v
           python -m unittest test_us_dollar_assets test_canada_issue_identity test_yugoslav_identity -v
           python -m unittest test_coin_photo -v

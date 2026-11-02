@@ -1047,12 +1047,16 @@ def _theme_fuzzy_hit(word, title_tokens, threshold=0.82):
     translit=norm(transliterate_greek(word))
     if translit and translit!=w:
         w_variants.add(translit)
+    # Latin transliteration often writes x as ks (e.g. Aleksandar).
+    # Normalize that spelling before the existing conservative similarity test.
+    w_variants.update(v.replace("ks","x") for v in list(w_variants))
     for tok in title_tokens:
         if len(tok)<5:continue
         tok_variants={tok}
         tok_translit=norm(transliterate_greek(tok))
         if tok_translit and tok_translit!=tok:
             tok_variants.add(tok_translit)
+        tok_variants.update(v.replace("ks","x") for v in list(tok_variants))
         if any(SequenceMatcher(None,wv,tv).ratio()>=threshold for wv in w_variants for tv in tok_variants):
             return True
     return False
@@ -2071,6 +2075,8 @@ def _is_mashops_checkpoint_html(page_text, final_url=""):
         "checking your browser",
         "human verification",
         "creoline checkpoint",
+        "you opened a filtered list directly",
+        "please confirm that you would like to see the results",
     )
     return (
         "/_creoline/checkpoint" in url_low
@@ -2088,12 +2094,22 @@ def fetch_search(query, payload):
     last_err=None
     combined=[]
     used_urls=[]
-    for url in ma_urls(query):
+    search_urls=list(ma_urls(query))
+    for url in search_urls:
         try:
             r=SESSION.get(url,timeout=20,allow_redirects=True)
             print(f"[MA-Shops] GET {url} -> HTTP {r.status_code}, {len(r.text)} chars", flush=True)
             if r.status_code!=200:
                 last_err=f"HTTP {r.status_code}"
+                continue
+            # The sorted deep link can require a confirmation even though
+            # the ordinary public search works. Try that standard search once;
+            # never retry a CAPTCHA/WAF through alternative routes.
+            if "you opened a filtered list directly" in r.text.lower():
+                last_err="MA-Shops filtered-list confirmation: results currently unavailable"
+                plain="https://www.ma-shops.com/shops/search.php?searchstr="+urllib.parse.quote_plus(query)
+                if plain not in search_urls:
+                    search_urls.append(plain)
                 continue
             # MA-Shops can return a Creoline human-verification checkpoint
             # with HTTP 200. Detect it explicitly before parsing so the UI does
@@ -2755,6 +2771,12 @@ def coin_lookup():
     if _spec_is_sufficient(local_match):
         return jsonify({"match":local_match,"provider":provider,
                         "note":"Physical specifications resolved from the local catalogue; no external lookup was required."})
+
+    # Fast lookup is genuinely database-only, for callers that explicitly
+    # request it. Previously this flag was ignored and could start a full crawl.
+    if payload.get("fast"):
+        return jsonify({"match":local_match,"provider":provider,
+                        "note":"No complete local specifications; external lookup was not requested."})
 
     # Cache miss/incomplete record: query the identity-validated MA-Shops
     # fallback once, then immediately enrich PostgreSQL for future requests.
@@ -4037,7 +4059,7 @@ def coin_search():
         "sources_ok":[k for k,v in provider_statuses.items() if v=="ok"],
         "sources_failed":[k for k,v in provider_statuses.items() if v in ("unavailable","error")],
         "provider_statuses":provider_statuses,"errors":errors[-6:],
-        "note":"The two cheapest validated matching COIN listings found after scanning both normal and cheapest-first MA-Shops search results are shown as purchase anchors. Dealer market value (Auction Intelligence) uses a separate, broader relevance-ranked sample — not only those two lowest asks. Unknown shipping is never treated as free.",
+        "note":"The lowest-priced validated matching coin listings in the retrieved sample are shown as purchase anchors; this is not a guarantee of the lowest price across the entire marketplace. When sorted search requires confirmation, ordinary public search is used. Auction Intelligence uses a separate broader sample. Unknown shipping is never treated as free.",
         "shipping_note":f"shipping=null means unknown. shipping_status distinguishes confidence: known_target (item page confirmed your chosen destination, {ship_to_country}), known_target_search (MA-Shops search row explicitly named your chosen destination), known_target_db (matched dealer/destination tier in the local shipping database), known_other_destination (a specific other destination was found — see shipping_destination), known_unconfirmed_destination (a flat rate was found with no destination stated), free (confirmed free), unknown (nothing reliable found).",
         "ship_to_country":ship_to_country,
         "cheapest_known_delivered":public_offer(next((o for o in valid if o.get("total") is not None), valid[0])) if valid else None,
