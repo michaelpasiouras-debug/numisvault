@@ -5,6 +5,7 @@ import re
 # Focus: names commonly encountered on European numismatic marketplaces.
 # Canonical values match CoinBids' English country names.
 ALIASES={
+'Yugoslavia':['yugoslavia','jugoslawien','jugoslavija','yougoslavie','yugoslavian','γιουγκοσλαβία','γιουγκοσλαβια','југославија'],
 'Greece':['greece','greek','hellas','ellada','ellas','ελλαδα','ελλάδα','griechenland','griekenland','grece','grèce','grecia','grécia','grecja','recko','řecko','grecko','grécko','grcka','grčka','görögország','gorogorszag','yunanistan','grækenland','graekenland','grekland','kreikka'],
 'Germany':['germany','deutschland','allemagne','alemania','germania','duitsland','germanie','alemanha','niemcy','nemecko','německo','nemacka','njemačka','nemecka','tyskland','saksa'],
 'France':['france','frankreich','francia','frança','franca','frankrijk','frankrig','frankrike','ranska','francja','francie','francuska','francúzsko'],
