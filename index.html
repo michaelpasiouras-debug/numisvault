@@ -1090,11 +1090,16 @@ function metalIntelligenceHTML(prefix,title='Metal Intelligence'){
    <div id="${prefix}MetalNote" class="muted" style="margin-top:8px">Metal data will appear after a catalogue/specification match is identified.</div>
  </div>`;
 }
+function metalFineness(match,parsed){
+ const explicit=match?.fineness_per_mille;
+ const value=explicit!=null?Number(explicit):Number(parsed.fineness);
+ return Number.isFinite(value)&&value>0&&value<=1000?value:0;
+}
 async function intrinsicMetalValueEUR(match){
  const comp=typeof match?.composition==='string'?match.composition:'';
  const parsed=parseNumistaComposition(comp);
  const weight=Number(match?.weight_g)||0;
- const fineness=Number(parsed.fineness)||0;
+ const fineness=metalFineness(match,parsed);
  if(!parsed.precious||!weight||!fineness||!['gold','silver','platinum','palladium'].includes(parsed.metal)) return null;
  try{
    const [spot,eurRate]=await Promise.all([fetchSpotPricesUSD(),fetchUsdToEur()]);
@@ -1110,7 +1115,7 @@ async function populateMetalIntelligence(prefix,match,isCurrent=()=>true){
  const comp=typeof match?.composition==='string'?match.composition:'';
  const parsed=parseNumistaComposition(comp);
  const weight=Number(match?.weight_g)||0;
- const fineness=Number(parsed.fineness)||0;
+ const fineness=metalFineness(match,parsed);
  const fine=(weight>0&&fineness>0)?weight*fineness/1000:0;
  const set=(suffix,val)=>{const el=$(prefix+suffix);if(el)el.value=val??'—';};
  set('Metal',parsed.precious?parsed.label:(comp?'Common alloy':'—'));

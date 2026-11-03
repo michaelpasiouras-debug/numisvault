@@ -50,5 +50,17 @@ assert.equal(ctx.marketAvailabilityMessage({provider_statuses:{'MA-Shops':'ok'},
  ctx.currentResearchToken++;node('mValue').value='new coin pending';
  finishSpot({silver:30,eur:0.9});await melt;
  assert.equal(node('mValue').value,'new coin pending');
+ vm.runInContext(slice('function metalFineness(', 'function parseNumistaComposition('),ctx);
+ Object.assign(ctx,{parseNumistaComposition:()=>({precious:true,metal:'silver',label:'Silver',fineness:null}),
+ fetchSpotPricesUSD:async()=>({silver:31.1034768}),fetchUsdToEur:async()=>0.9});
+ const match={composition:'Silver',weight_g:7,fineness_per_mille:500};
+ const intrinsic=await ctx.intrinsicMetalValueEUR(match);
+ assert.equal(intrinsic.fineGrams,3.5);
+ assert.ok(Math.abs(intrinsic.valueEUR-3.15)<1e-10);
+ await ctx.populateMetalIntelligence('auction',match);
+ assert.equal(node('auctionFine').value,'3.500');
+ assert.equal(node('auctionFineness').value,'500');
+ assert.equal(ctx.metalFineness({fineness_per_mille:1001},{fineness:500}),0);
+ assert.equal(ctx.metalFineness({}, {fineness:925}),925);
  console.log('PASS: shared identity policy, source errors, independent specs, stale metal protection');
 })().catch(e=>{console.error(e);process.exitCode=1});
