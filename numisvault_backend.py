@@ -2305,7 +2305,13 @@ def _spec_is_sufficient(spec):
     if not composition:return False
     precious=any(x in metal for x in ("silver","gold","platinum","palladium"))
     if not precious:return True
-    return spec.get("weight_g") is not None and spec.get("fineness_per_mille") is not None
+    weight=_fnum(spec.get("weight_g"))
+    fineness=_fnum(spec.get("fineness_per_mille"))
+    if fineness is None:
+        # Catalogue composition often embeds the explicitly stated fraction.
+        match=re.search(r"\(\s*(?:0)?[.,](\d{1,4})\s*\)",composition)
+        if match:fineness=float("0."+match.group(1))*1000
+    return weight is not None and weight>0 and fineness is not None and 0<fineness<=1000
 
 def persist_mashops_spec(coin,spec):
     """Upsert one identity-validated MA-Shops physical specification.
@@ -2765,9 +2771,11 @@ def coin_lookup():
     # as a fallback while trying to enrich it from a validated listing.
     local_match=pg_coin_spec_match(coin)
     provider="local_pg"
-    if not local_match:
-        local_match=local_coin_spec_match(coin)
-        provider="local"
+    if not _spec_is_sufficient(local_match):
+        curated_match=local_coin_spec_match(coin)
+        if _spec_is_sufficient(curated_match) or not local_match:
+            local_match=curated_match
+            provider="local"
     if _spec_is_sufficient(local_match):
         return jsonify({"match":local_match,"provider":provider,
                         "note":"Physical specifications resolved from the local catalogue; no external lookup was required."})
@@ -2783,9 +2791,19 @@ def coin_lookup():
     ma_spec=mashops_spec_fallback(coin,(payload.get("raw_query") or "").strip())
     if ma_spec:
         persisted=persist_mashops_spec(coin,ma_spec)
-        return jsonify({"match":ma_spec,"provider":"ma_shops",
-                        "catalogue_enriched":persisted,
-                        "note":"Physical specifications extracted from an identity-validated MA-Shops item page and saved for future database-first lookups."})
+        if _spec_is_sufficient(ma_spec):
+            return jsonify({"match":ma_spec,"provider":"ma_shops",
+                            "catalogue_enriched":persisted,
+                            "note":"Physical specifications extracted from an identity-validated MA-Shops item page and saved for future database-first lookups."})
+        # A partial dealer record is useful evidence, not a completed metal
+        # lookup. Continue to the validated live catalogue; retain the partial
+        # record if that source fails. Never merge specs across sources.
+        if not local_match or sum(ma_spec.get(k) is not None for k in
+                ("weight_g", "fineness_per_mille", "diameter_mm")) >= sum(
+                local_match.get(k) is not None for k in
+                ("weight_g", "fineness_per_mille", "diameter_mm")):
+            local_match=ma_spec
+            provider="ma_shops"
 
     results,err=numista_search(query,category="coin",count=12,year=coin.get("year"))
     if err:
