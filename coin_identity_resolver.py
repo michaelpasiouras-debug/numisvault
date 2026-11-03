@@ -507,6 +507,19 @@ class CoinIdentityResolver:
 
         # Special denomination nicknames (quarter, dime, sovereign...)
         for score,c,currency,sd,a in special_hits:
+            # Explicit face value + currency outranks a visual nickname:
+            # "1 dollar ... eagle" must not create a competing $10 type.
+            # Only ambiguous visual words are suppressed; real denomination
+            # conflicts (e.g. quarter versus 1 dollar) remain reviewable.
+            if norm(a) in AMBIGUOUS_VISUAL_DENOMINATION_WORDS:
+                explicit_values=[]
+                for unit in currency.get("aliases",[]):
+                    unit=norm(unit)
+                    if not unit:continue
+                    for value in re.findall(r"(?<![\w.])(\d+(?:[.,]\d+)?)\s+"+re.escape(unit)+r"(?!\w)",norm(numbers_source)):
+                        explicit_values.append(float(value.replace(",",".")))
+                if explicit_values and all(v!=sd.get("value") for v in explicit_values):
+                    continue
             sc=.62 + .20*score
             reasons=["special denomination alias: "+a]
             # Some special-denomination aliases (see

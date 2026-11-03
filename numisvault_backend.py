@@ -3633,7 +3633,8 @@ def coin_search():
         if _raw_for_target:
             try:
                 target_resolution=resolve_coin_identity(_raw_for_target)
-                target_identity=target_resolution.get("best")
+                target_identity=(target_resolution.get("best")
+                                 if target_resolution.get("status")=="resolved" else None)
                 # Canonical resolver output must feed the hard filter even when
                 # the client supplied only coin.raw.
                 if target_identity:
