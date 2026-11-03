@@ -27,6 +27,7 @@ jobs:
       - name: Wait for production deployment and stress-test CoinBids
         env:
           BASE_URL: https://www.coinbids.eu
+          FULL_LIVE_QA: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
           python - <<'PY'
           import json, os, time, urllib.request, urllib.error
@@ -94,6 +95,12 @@ jobs:
               value=round(float(total if total is not None else price),2)
               print('OK market search',q,'valid=',valid,'best=',value,'cache=',d.get('cache'))
               return value,d
+
+          # Push checks verify reachability/identity without stress-testing
+          # the same Free instance serving users. Full market QA remains manual.
+          if os.environ.get('FULL_LIVE_QA') != 'true':
+              print('LIGHTWEIGHT POST-PUSH SMOKE: PASS (full market checks run manually)')
+              raise SystemExit(0)
 
           canonical='Greece 10 euro 2022 antikythera mechanism'
           first,first_data=coin_search(canonical)

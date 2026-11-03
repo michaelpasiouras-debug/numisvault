@@ -1,14 +1,6 @@
 name: Coin Search Live QA
 
 on:
-  push:
-    paths:
-      - 'numisvault_backend.py'
-      - 'coin_identity_resolver.py'
-      - 'multilingual_country_aliases.py'
-      - 'ma_shops_shipping.csv'
-      - 'test_live_market_qa.py'
-      - '.github/workflows/coin-search-live-qa.yml'
   workflow_dispatch:
   schedule:
     - cron: '17 4 * * *'
@@ -25,10 +17,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      - name: Wait briefly for production deploy on push
-        if: github.event_name == 'push'
-        run: sleep 75
 
       - name: Verify identity and true cheapest validated offer
         env:
