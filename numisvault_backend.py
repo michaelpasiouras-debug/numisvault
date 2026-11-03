@@ -33,6 +33,7 @@ except Exception as _corrections_import_err:
     print(f"[corrections] resolver_corrections not available: {_corrections_import_err}")
 from bs4 import BeautifulSoup
 from difflib import SequenceMatcher
+from functools import lru_cache
 from multilingual_country_aliases import normalize_country_aliases_in_text
 from price_research_providers import (
     CallableProvider,
@@ -1055,10 +1056,15 @@ def _theme_fuzzy_hit(word, title_tokens, threshold=0.82):
         if tok_translit and tok_translit!=tok:
             tok_variants.add(tok_translit)
         tok_variants.update(v.replace("ks","x") for v in list(tok_variants))
-        if any(SequenceMatcher(None,wv,tv).ratio()>=threshold for wv in w_variants for tv in tok_variants):
+        # Maximum possible SequenceMatcher ratio from lengths alone. Skip
+        # impossible pairs without changing the accepted similarity threshold.
+        if any(2*min(len(wv),len(tv))/(len(wv)+len(tv))>=threshold
+               and SequenceMatcher(None,wv,tv).ratio()>=threshold
+               for wv in w_variants for tv in tok_variants):
             return True
     return False
 
+@lru_cache(maxsize=1024)
 def theme_word_matches_title(theme_raw, title):
     """Soft, GENERIC multilingual match: True if the free-text theme
     (any word(s) the user typed, e.g. "mechanism", "anniversary",
@@ -1085,6 +1091,7 @@ def theme_word_matches_title(theme_raw, title):
             hits+=1
     return hits>=max(1,len(words))  # ALL leftover theme words must be recognized (in some language)
 
+@lru_cache(maxsize=1024)
 def theme_match_score(theme_raw, title):
     """0.0-1.0 SOFT ranking bonus (never a hard filter) — fraction of the
     theme's words recognized in the title via theme_word_matches_title's

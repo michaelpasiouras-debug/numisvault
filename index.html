@@ -1235,7 +1235,7 @@ async function getSharedCoinSpecMatch(endpoint,coin,rawQuery,{force=false,signal
      if(signal.aborted) relayAbort();
      else signal.addEventListener('abort',relayAbort,{once:true});
    }
-   const timer=setTimeout(()=>ctrl.abort('Coin specification lookup exceeded 20 seconds'),20000);
+   const timer=setTimeout(()=>ctrl.abort('Coin specification lookup exceeded 60 seconds'),60000);
    let res;
    try{
      res=await fetch(base+'/api/coin-lookup',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctrl.signal,body:JSON.stringify({coin,raw_query:rawQuery||'',fast:!!fast})});
@@ -1595,7 +1595,7 @@ async function autoResearch(endpoint,t,researchToken){
    $('bestPriceBox').innerHTML='<strong>MA-Shops:</strong> validating listings and finding the two cheapest matching coins...';
    if($('rMarketValue')) $('rMarketValue').value='Searching...';
    const payload={coin:t,variants:searchVariants(t),raw_query:($('rFreeText')?.value||'').trim(),ship_to:getShipToCountry(),currency:$('rCurrency').value,include_shipping:$('rShipping').value==='include',asset_type:'COIN',limit:2};
-   const timer=setTimeout(()=>priceCtrl.abort('Price search exceeded 35 seconds'),35000);
+   const timer=setTimeout(()=>priceCtrl.abort('Price search exceeded 90 seconds'),90000);
    let res;
    try{
      for(let attempt=0;attempt<2;attempt++){
