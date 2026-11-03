@@ -930,17 +930,15 @@ def make_queries(payload, resolved_queries=None):
     return out[:5]
 
 def ma_urls(query):
-    """MA-Shops purchase discovery: request cheapest-first directly.
+    """Use the public results page directly.
 
-    Price Research is trying to find the cheapest VALID matching offers, so
-    fetching the normal/relevance page as well only doubles network traffic.
-    A broader relevance-ranked sample belongs to Auction Intelligence, not to
-    the top-2 purchase-discovery path.
+    Sorted deep links return a confirmation page, requiring a second request
+    for the same query. Rank validated offers locally; this remains a sample,
+    never a claim of the cheapest listing across the entire marketplace.
     """
     q = urllib.parse.quote_plus(query)
-    return [
-        f"https://www.ma-shops.com/shops/search.php?searchstr={q}&sortby=preis_eur",
-    ]
+    return [f"https://www.ma-shops.com/shops/search.php?searchstr={q}"]
+
 
 def ebay_urls(query):
     q = urllib.parse.quote_plus(query)
@@ -3774,7 +3772,8 @@ def coin_search():
             continue
         if not passes_hard_filter(match_text,payload):
             rejected["identity"]+=1
-            _reject_reason=_why_rejected(match_text,payload)
+            _reject_reason=(_why_rejected(match_text,payload)
+                            if trace_enabled or _reject_log_budget[0]>0 else None)
             if trace_enabled:
                 candidate_trace.append({"status":"REJECTED","reason":_reject_reason,
                     "title":o.get("title"),"match_text":match_text,"url":o.get("url"),

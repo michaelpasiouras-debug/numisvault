@@ -33,12 +33,22 @@ class ResearchContracts(unittest.TestCase):
         self.assertEqual(result.offers,[])
         parser.assert_not_called()
 
+    def test_public_search_avoids_confirmation_round_trip(self):
+        response=Mock(status_code=200,url=b.ma_urls('Canada Davis')[0],text='<html>results</html>')
+        offer={'title':'coin','price':10,'currency':'EUR','url':'https://www.ma-shops.com/dealer/item.php?id=1'}
+        with patch.object(b.SESSION,'get',return_value=response) as get, patch.object(b,'extract_cards',return_value=[offer]), patch.object(b,'extract_from_jsonld',return_value=[]):
+            offers,used,error=b.fetch_search('Canada Davis',{})
+        self.assertEqual(offers,[dict(offer,dealer_source='MA-Shops')])
+        self.assertIsNone(error)
+        get.assert_called_once()
+        self.assertNotIn('sortby',used)
+
     def test_sorted_confirmation_uses_public_search_once(self):
         confirmation=Mock(status_code=200,url='https://www.ma-shops.com/shops/search.php?sortby=preis_eur',
                           text='You opened a filtered list directly.')
         results=Mock(status_code=200,url='https://www.ma-shops.com/shops/search.php?searchstr=test',text='<html>listings</html>')
         offer={'title':'test coin','price':10,'currency':'EUR','url':'https://www.ma-shops.com/dealer/item.php?id=1'}
-        with patch.object(b.SESSION,'get',side_effect=[confirmation,results]) as get, patch.object(b,'extract_cards',return_value=[offer]), patch.object(b,'extract_from_jsonld',return_value=[]):
+        with patch.object(b,'ma_urls',return_value=[confirmation.url]), patch.object(b.SESSION,'get',side_effect=[confirmation,results]) as get, patch.object(b,'extract_cards',return_value=[offer]), patch.object(b,'extract_from_jsonld',return_value=[]):
             offers,used,error=b.fetch_search('test',{})
         self.assertEqual(len(offers),1)
         self.assertIsNone(error)
