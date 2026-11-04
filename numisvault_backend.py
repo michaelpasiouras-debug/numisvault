@@ -405,6 +405,15 @@ _GREEK_ACCENT_MAP = str.maketrans({
     "ά":"α","έ":"ε","ή":"η","ί":"ι","ό":"ο","ύ":"υ","ώ":"ω","ϊ":"ι","ϋ":"υ","ΐ":"ι","ΰ":"υ",
 })
 def norm(s):
+    text=str(s if s is not None else "")
+    # Bound both key count and key size: large page bodies must not fill RAM.
+    return _norm_cached(text) if len(text)<=2048 else _norm_uncached(text)
+
+@lru_cache(maxsize=4096)
+def _norm_cached(text):
+    return _norm_uncached(text)
+
+def _norm_uncached(s):
     # Resolver/API fields may be typed numbers (notably denomination_value).
     # Normalization is a shared boundary used by scoring as well as filtering,
     # so it must accept scalar values without throwing inside a provider.
@@ -2102,8 +2111,9 @@ def fetch_search(query, payload):
     search_urls=list(ma_urls(query))
     for url in search_urls:
         try:
+            fetch_started=time.monotonic()
             r=SESSION.get(url,timeout=20,allow_redirects=True)
-            print(f"[MA-Shops] GET {url} -> HTTP {r.status_code}, {len(r.text)} chars", flush=True)
+            print(f"[MA-Shops] GET {url} -> HTTP {r.status_code}, {len(r.text)} chars, fetch_seconds={time.monotonic()-fetch_started:.3f}", flush=True)
             if r.status_code!=200:
                 last_err=f"HTTP {r.status_code}"
                 continue
@@ -2127,11 +2137,12 @@ def fetch_search(query, payload):
                 last_err="MA-Shops returned a CAPTCHA/anti-bot page"
                 print(f"[MA-Shops]   -> looks like a CAPTCHA/anti-bot page", flush=True)
                 continue
+            parse_started=time.monotonic()
             soup=BeautifulSoup(r.text,"html.parser")
             offers=extract_from_jsonld(soup,r.url,payload)
             offers+=extract_cards(soup,r.url,payload)
             for o in offers: o["dealer_source"]="MA-Shops"
-            print(f"[MA-Shops]   -> parsed {len(offers)} offer(s)", flush=True)
+            print(f"[MA-Shops]   -> parsed {len(offers)} offer(s), parse_seconds={time.monotonic()-parse_started:.3f}", flush=True)
             if offers:
                 combined.extend(offers)
                 used_urls.append(r.url)
