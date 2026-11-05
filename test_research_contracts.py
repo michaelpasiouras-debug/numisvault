@@ -10,6 +10,21 @@ from coin_identity_resolver import CoinIdentityResolver, DB_PATH
 from price_research_providers import CallableProvider
 
 class ResearchContracts(unittest.TestCase):
+    def test_country_language_does_not_change_market_query_budget(self):
+        for country,aliases,description in [
+            ('Greece',['Greece','Griechenland','Griekenland','Ελλάδα'],'2 euro 2022 Erasmus'),
+            ('Germany',['Germany','Deutschland','Allemagne'],'5 mark 1935 Hindenburg'),
+            ('Yugoslavia',['Yugoslavia','Jugoslawien','Yougoslavie'],'10 dinara 1931 Aleksandar'),
+        ]:
+            queries=[]
+            for alias in aliases:
+                raw=f'{alias} {description}'
+                queries.append(b.make_queries({'raw_query':raw,'coin':{'raw':raw}}))
+            with self.subTest(country=country):
+                for result in queries:
+                    self.assertEqual(result,queries[0])
+                    self.assertEqual(result[0],f'{country} {description}')
+
     def test_missing_country_never_becomes_another_currency_holder(self):
         for name, query in [('Greece','Greece 2 euro 2022'),
                             ('Belgium','Belgium 5 francs 1930'),

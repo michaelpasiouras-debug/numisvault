@@ -906,7 +906,15 @@ def make_queries(payload, resolved_queries=None):
     # Exact user wording first. It is usually the highest-information query
     # and MA-Shops' cheapest-first ordering can then surface the cheapest
     # matching candidates immediately.
-    if raw: qs.append(raw)
+    if raw:
+        # Country aliases must not change the marketplace query budget. Keep
+        # issue names, dates, mintmarks and grades verbatim; normalize ONLY
+        # recognized country spans (not the whole string with norm()).
+        canonical_raw=normalize_country_aliases_in_text(raw)
+        if country:
+            canonical_raw=re.sub(r'(?<!\w)'+re.escape(country)+r'(?!\w)',
+                                 lambda m:country,canonical_raw,flags=re.I)
+        qs.append(canonical_raw)
     # Put issue-specific multilingual aliases ahead of broad resolver/core queries
     # so cheap foreign-language listings are discovered before the 5-query cap.
     qs.extend(issue_search_queries)
@@ -3749,6 +3757,13 @@ def coin_search():
     raw_count=len(all_offers)
     searched_cheapest_first=any("sortby=preis_eur" in str(u.get("url","")) for u in used)
     # Deduplicate by canonical URL.
+    # Parallel query completion must not decide which equally scored copy
+    # survives or which equal-price offers receive the bounded detail lookup.
+    query_order={q:i for i,q in enumerate(queries)}
+    all_offers.sort(key=lambda o:(
+        min((query_order.get(q,len(queries)) for q in o.get('_source_queries',[])),default=len(queries)),
+        str(o.get('url') or ''),str(o.get('title') or ''),
+        json.dumps(o,sort_keys=True,default=str)))
     by={}
     for o in all_offers:
         key=o.get("url") or (o.get("title"),o.get("price"))
@@ -3964,7 +3979,7 @@ def coin_search():
     if include_shipping and detail_fallback:
         candidates_for_detail=sorted(
             detail_fallback,
-            key=lambda o:(o.get("price") is None,o.get("price") if o.get("price") is not None else float("inf"))
+            key=lambda o:(o.get("price") is None,o.get("price") if o.get("price") is not None else float("inf"),str(o.get("url") or ""))
         )[:2]
         with ThreadPoolExecutor(max_workers=min(2,len(candidates_for_detail))) as _detail_pool:
             _future_map={_detail_pool.submit(enrich_offer_from_item_page,o,ship_to_country,False):o for o in candidates_for_detail}
