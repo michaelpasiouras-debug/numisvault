@@ -23,7 +23,28 @@ class ResearchContracts(unittest.TestCase):
             with self.subTest(country=country):
                 for result in queries:
                     self.assertEqual(result,queries[0])
-                    self.assertEqual(result[0],f'{country} {description}')
+                    self.assertEqual(result[0].lower(),f'{country} {description}'.lower().replace('dinara','dinar'))
+
+    def test_issue_translations_keep_same_queries_and_qualifiers(self):
+        from test_live_market_qa import CASES
+        for case in CASES:
+            queries=[b.make_queries({'raw_query':q,'coin':{'raw':q}}) for q in [case['query']]+case['aliases']]
+            self.assertTrue(all(q==queries[0] for q in queries),queries)
+        groups=[
+            ['Greece 2 euro 2022 Erasmus','Ελλάδα 2 ευρώ 2022 Erasmus','Griekenland 2 EUR 2022 Erasmus'],
+            ['Greece 10 euro 2022 antikythera mechanism','Grecia 10 euro 2022 meccanismo di anticitera',"Grèce 10 euro 2022 mécanisme d’anticythère".replace('’',"'")],
+        ]
+        for group in groups:
+            results=[b.make_queries({'raw_query':q,'coin':{'raw':q}}) for q in group]
+            for result in results:
+                self.assertEqual(result,results[0])
+                self.assertLessEqual(len(result),5)
+        q='Greece 10 euro 2022 antikythera mechanism KM#123 Proof A'
+        result=b.make_queries({'raw_query':q,'coin':{'raw':q}})
+        self.assertIn('km#123 proof a',result[0].lower())
+        q='Greece 2 euro 2022 Erasmus'
+        result=b.make_queries({'raw_query':q,'coin':{'raw':q}})
+        self.assertIn('griekenland 2 euro 2022 erasmus',result)
 
     def test_missing_country_never_becomes_another_currency_holder(self):
         for name, query in [('Greece','Greece 2 euro 2022'),

@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory, redirect
 from flask_cors import CORS
-import requests, re, html as ihtml, urllib.parse, time, os, math, threading, json, hashlib
+import requests, re, html as ihtml, urllib.parse, time, os, math, threading, json, hashlib, unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
 import email.utils
@@ -763,6 +763,34 @@ def to_eur(value,currency):
     rate=rates.get(cur)
     return float(value)/float(rate) if rate else None
 
+MARKET_COUNTRY_NAMES={
+    'greece':['griechenland','griekenland'],
+    'germany':['deutschland','allemagne'],
+    'france':['frankreich','francia'],
+    'italy':['italien','italia'],
+    'spain':['spanien','espana'],
+    'austria':['osterreich','autriche'],
+    'switzerland':['schweiz','suisse'],
+    'united states':['usa','vereinigte staaten'],
+    'united kingdom':['great britain','grossbritannien'],
+    'yugoslavia':['jugoslawien','yougoslavie'],
+    'canada':['kanada'],
+}
+
+def _market_text(text):
+    # Preserve punctuation, catalogue numbers and mintmarks. Only accents,
+    # country aliases and currency units immediately after a value normalize.
+    text=''.join(c for c in unicodedata.normalize('NFD',str(text)) if not unicodedata.combining(c)).casefold()
+    text=normalize_country_aliases_in_text(text)
+    for unit,aliases in CURRENCY_UNIT_ALIASES.items():
+        words=sorted({_market_accentless(a) for a in aliases},key=len,reverse=True)
+        text=re.sub(r'(?<=\d)\s+(?:'+ '|'.join(re.escape(a) for a in words)+r')(?!\w)',
+                    lambda m:' '+unit,text)
+    return re.sub(r'\s+',' ',text).strip()
+
+def _market_accentless(text):
+    return ''.join(c for c in unicodedata.normalize('NFD',str(text)) if not unicodedata.combining(c)).casefold()
+
 def make_queries(payload, resolved_queries=None):
     coin = payload.get("coin") or {}
     # Resolver fields are typed data: denomination_value is a float (for
@@ -815,6 +843,7 @@ def make_queries(payload, resolved_queries=None):
                 coin["denom"]=denom
             resolver_queries=b.get("search_variants") or []
 
+    denom=_market_text(denom)
     # Raw-only API callers do not have the frontend parser's separate theme
     # field. Derive only the descriptive residue here so known same-year/same-
     # denomination issues (e.g. Antikythera vs Lord Byron) remain strictly
@@ -854,6 +883,7 @@ def make_queries(payload, resolved_queries=None):
     # is language-sensitive. Without expanding the outgoing query, a cheaper German/
     # French/Italian listing may never reach passes_hard_filter() at all.
     issue_search_queries=[]
+    selected_issue=None
     theme_for_issue=str(coin.get("theme") or "").strip()
     if RESOLVER_AVAILABLE and theme_for_issue:
         try:
@@ -887,8 +917,6 @@ def make_queries(payload, resolved_queries=None):
                     if not alias or not an or an in seen_alias:
                         continue
                     seen_alias.add(an)
-                    if an in raw_n:
-                        continue
                     # Keep country in issue-specific queries. Historical live QA
                     # proved that MA-Shops returns the Antikythera listing for
                     # "Greece 10 euro 2022 antikythera mechanism"; dropping the
@@ -910,7 +938,14 @@ def make_queries(payload, resolved_queries=None):
         # Country aliases must not change the marketplace query budget. Keep
         # issue names, dates, mintmarks and grades verbatim; normalize ONLY
         # recognized country spans (not the whole string with norm()).
-        canonical_raw=normalize_country_aliases_in_text(raw)
+        canonical_raw=_market_text(raw)
+        if selected_issue:
+            aliases=selected_issue.get('aliases') or []
+            # Longest first prevents a short alias from consuming part of a
+            # longer translated name. Preserve every unmatched qualifier.
+            if aliases:
+                pattern=r'(?<!\w)(?:'+'|'.join(re.escape(_market_text(a)) for a in sorted(aliases,key=len,reverse=True))+r')(?!\w)'
+                canonical_raw=re.sub(pattern,lambda m:_market_text(aliases[0]),canonical_raw,count=1)
         if country:
             canonical_raw=re.sub(r'(?<!\w)'+re.escape(country)+r'(?!\w)',
                                  lambda m:country,canonical_raw,flags=re.I)
@@ -918,6 +953,12 @@ def make_queries(payload, resolved_queries=None):
     # Put issue-specific multilingual aliases ahead of broad resolver/core queries
     # so cheap foreign-language listings are discovered before the 5-query cap.
     qs.extend(issue_search_queries)
+    # Shared bounded discovery queries, independent of the user's language.
+    # Keep localized country names here deliberately: marketplace retrieval
+    # does not implement our own country-alias normalization.
+    if raw and country:
+        for name in MARKET_COUNTRY_NAMES.get(canonical_country(country),[]):
+            qs.append(re.sub(r'(?<!\w)'+re.escape(country)+r'(?!\w)',lambda m:name,canonical_raw,flags=re.I))
     qs.extend(resolver_queries)
     core = " ".join(x for x in [country, denom, year] if x)
     if core: qs.append(core)
