@@ -1271,7 +1271,7 @@ async function fetchCatalogLookup(endpoint,t,researchToken){
    if(rr.ambiguous){
      $('mResultBox').textContent=rr.data?.note||'Specify the issue or coin type before calculating metal content.';
      box.innerHTML='<strong>Coin type needs clarification.</strong><div class="muted" style="margin-top:6px">'+esc(rr.data?.note||'Add the issue/theme to your search so CoinBids does not choose arbitrarily.')+'</div>'+
-       (rr.candidates||[]).slice(0,5).map(c=>`<div style="margin-top:8px">${esc(c.title||'—')}${c.url?` — <a class="searchlink" href="${esc(c.url)}" target="_blank" rel="noopener">Catalogue source</a>`:''}</div>`).join('');
+       (rr.candidates||[]).slice(0,5).map(c=>`<div style="margin-top:8px">${esc(c.title||'—')}${c.issuer?` — ${esc(c.issuer)}`:''}${c.url?` — <a class="searchlink" href="${esc(c.url)}" target="_blank" rel="noopener">Catalogue source</a>`:''}</div>`).join('');
      return;
    }
    const m=rr.match;

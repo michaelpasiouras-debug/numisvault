@@ -10,6 +10,17 @@ from coin_identity_resolver import CoinIdentityResolver, DB_PATH
 from price_research_providers import CallableProvider
 
 class ResearchContracts(unittest.TestCase):
+    def test_numista_issuer_cannot_be_overridden_by_description(self):
+        target={'country':'Greece','denom':'2 euro','year':2022}
+        detail={'issuer':{'name':'Cyprus'},'title':'2 Euros (Erasmus Programme)',
+                'value':{'text':'2 Euros'},'min_year':2022,'max_year':2022,
+                'description':'Common European issue, also issued in Greece.'}
+        self.assertIn('WRONG_ISSUER',b.validate_numista_detail_precheck(target,detail))
+        self.assertIn('WRONG_ISSUER',b.validate_numista_detail(target,detail,[{'year':2022}])[0])
+        detail['issuer']={'name':'Greece'}
+        self.assertNotIn('WRONG_ISSUER',b.validate_numista_detail_precheck(target,detail))
+        self.assertNotIn('WRONG_ISSUER',b.validate_numista_detail(target,detail,[{'year':2022}])[0])
+
     def test_country_language_does_not_change_market_query_budget(self):
         for country,aliases,description in [
             ('Greece',['Greece','Griechenland','Griekenland','Ελλάδα'],'2 euro 2022 Erasmus'),

@@ -2771,9 +2771,9 @@ def validate_numista_detail_precheck(target, detail):
     if typ and any(x in typ for x in ("banknote","note","exonumia")):reasons.append("WRONG_ASSET")
     country=target.get("countryEN") or target.get("country") or ""
     blob=norm(flatten_text(detail))
-    issuer=flatten_text(numista_pick(detail,"issuer","issuer.name") or "")
+    issuer=flatten_text(numista_pick(detail,"issuer.name","issuer") or "")
     if country and canonical_country(country)!=canonical_country(issuer):
-        if not country_in_title(country,blob):reasons.append("WRONG_ISSUER")
+        if issuer.strip() or not country_in_title(country,str(numista_pick(detail,"title") or "")):reasons.append("WRONG_ISSUER")
     denom=target.get("denom") or target.get("denomination") or ""
     title=flatten_text(numista_pick(detail,"title") or "")
     if denom:
@@ -2789,10 +2789,11 @@ def validate_numista_detail(target, detail, issues):
     typ=norm(str(numista_pick(detail,"object_type","category","type") or ""))
     if typ and any(x in typ for x in ("banknote","note","exonumia")):reasons.append("WRONG_ASSET")
     country=target.get("countryEN") or target.get("country") or ""
-    issuer=flatten_text(numista_pick(detail,"issuer","issuer.name") or "")
+    issuer=flatten_text(numista_pick(detail,"issuer.name","issuer") or "")
     if country and canonical_country(country)!=canonical_country(issuer):
-        # Some details encode issuer deeper; title/blob fallback is permitted only if alias is visible.
-        if not country_in_title(country,blob):reasons.append("WRONG_ISSUER")
+        # An explicit issuer is authoritative. A mention in descriptions,
+        # references or related coins cannot override a different country.
+        if issuer.strip() or not country_in_title(country,str(numista_pick(detail,"title") or "")):reasons.append("WRONG_ISSUER")
     else:score+=.25
     denom=target.get("denom") or target.get("denomination") or ""
     title=flatten_text(numista_pick(detail,"title") or "")
@@ -2938,7 +2939,7 @@ def coin_lookup():
         candidates=[]
         for conf,detail,cand,_ in survivors[:5]:
             tid=numista_pick(detail,"id") or numista_pick(cand,"id")
-            candidates.append({"id":tid,"title":numista_pick(detail,"title") or numista_pick(cand,"title"),"url":f"https://en.numista.com/catalogue/pieces{tid}.html","confidence":conf})
+            candidates.append({"id":tid,"title":numista_pick(detail,"title") or numista_pick(cand,"title"),"url":f"https://en.numista.com/catalogue/pieces{tid}.html","confidence":conf,"issuer":numista_pick(detail,"issuer.name") or flatten_text(numista_pick(detail,"issuer"))})
         return jsonify({"match":None,"ambiguous":True,"candidates":candidates,"note":"Multiple exact catalogue candidates remain; specify the issue/theme."})
     conf,detail,best,issues=survivors[0];tid=numista_pick(detail,"id") or numista_pick(best,"id")
     wanted_year=str(coin.get("year") or "").strip()
