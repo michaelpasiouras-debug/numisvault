@@ -1,16 +1,18 @@
-/* Photo candidates require confirmation; photos and results never enter local storage. */
+/* Photos come first (optional). The best identity fills the search box but never
+   starts a search: the user reviews it, then searches. Photos and results never
+   enter local storage. */
 (() => {
   function mount(targetId) {
     const target = document.getElementById(targetId);
     if (!target) return;
     const panel = document.createElement('details');
-    panel.open = true;
+    panel.open = false; // optional path: many users have no photo at hand
     panel.className = 'panel';
     const summary = document.createElement('summary');
-    summary.textContent = 'Identify from two photos';
+    summary.textContent = 'Have photos? Start by identifying the coin from both sides (optional)';
     panel.append(summary);
     const help = document.createElement('p');
-    help.textContent = 'Upload both sides of the same coin, upright and in focus. Claude AI analyzes the photos. Confirm the proposed type and year before searching. Photos cannot verify authenticity or metal purity.';
+    help.textContent = 'Upload both sides of the same coin, upright and in focus. Claude AI fills the search box below with its best identification — check it, especially the year, before searching. Photos cannot verify authenticity or metal purity.';
     panel.append(help);
     const grid = document.createElement('div');
     grid.className = 'grid2';
@@ -43,7 +45,7 @@
     const results = document.createElement('div');
     results.setAttribute('aria-live', 'polite');
     panel.append(button, results);
-    target.closest('.field').after(panel);
+    target.closest('.field').before(panel);
     button.addEventListener('click', async () => {
       const current = ++revision;
       controller?.abort(); controller = new AbortController();
@@ -64,9 +66,32 @@
         if (!response.ok) throw new Error(data.error || 'Photo recognition is unavailable.');
         results.replaceChildren();
         const note = document.createElement('p');
-        note.textContent = data.candidates?.length ? 'Suggested identities from Claude AI — review the evidence and confirm the type and year.' : 'No matching type found. Try clearer photos or search by text.';
+        const candidates = data.candidates || [];
+        note.textContent = candidates.length ? '' : 'No matching type found. Try clearer photos or write the coin in the box below.';
         results.append(note);
-        for (const candidate of data.candidates || []) {
+        const fill = (candidate, yearText) => {
+          target.value = [candidate.country, candidate.title, yearText].filter(Boolean).join(' ');
+          target.dispatchEvent(new Event('input', {bubbles:true}));
+          target.dispatchEvent(new Event('change', {bubbles:true}));
+          target.focus();
+        };
+        // Pre-fill the search box with the best identification. Searching still
+        // requires the user's own click, so nothing runs on an unchecked guess.
+        if (candidates.length) {
+          const best = candidates[0];
+          const bestYear = best.year != null && /^-?\d{1,4}$/.test(String(best.year).trim()) ? String(best.year).trim() : '';
+          fill(best, bestYear);
+          note.textContent = bestYear
+            ? `Search box filled with Claude AI's best identification: "${target.value}". Check it, then search.`
+            : `Search box filled with Claude AI's best identification, but the year could not be read — add the year visible on your coin before searching.`;
+          if (candidates.length > 1) {
+            const other = document.createElement('p');
+            other.textContent = 'Not this coin? Other possible identities:';
+            results.append(other);
+          }
+        }
+        for (const [index, candidate] of candidates.entries()) {
+          if (index === 0) continue;
           const row = document.createElement('div');
           const link = document.createElement('p');
           link.textContent = `${candidate.country} ${candidate.title} — ${candidate.evidence || 'Please verify the identity.'}`;
@@ -75,15 +100,12 @@
           year.setAttribute('aria-label', 'Year visible on your coin');
           if (candidate.year != null) year.value = candidate.year;
           const use = document.createElement('button');
-          use.type = 'button'; use.textContent = 'Use this coin';
+          use.type = 'button'; use.textContent = 'Use this instead';
           use.addEventListener('click', () => {
             if (!/^-?\d{1,4}$/.test(year.value.trim())) {year.setCustomValidity('Enter the year visible on your coin.'); year.reportValidity(); return;}
             year.setCustomValidity('');
-            target.value = `${candidate.country} ${candidate.title} ${year.value.trim()}`;
-            target.dispatchEvent(new Event('input', {bubbles:true}));
-            target.dispatchEvent(new Event('change', {bubbles:true}));
-            target.focus();
-            note.textContent = 'Coin entered. Review the text, then run your search or auction analysis.';
+            fill(candidate, year.value.trim());
+            note.textContent = `Search box changed to "${target.value}". Check it, then search.`;
           });
           year.addEventListener('input', () => year.setCustomValidity(''));
           row.append(link, year, use); results.append(row);
