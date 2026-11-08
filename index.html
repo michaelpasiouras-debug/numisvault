@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>CoinBids — Coin Collection, Valuation & Auction Intelligence</title>
+<title>CoinBids — Coin Collection, Valuation & Fair Price Check</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHZpZXdCb3g9IjAgMCAyNDAgMjQwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxjaXJjbGUgY3g9IjEyMCIgY3k9IjEyMCIgcj0iMTE4IiBmaWxsPSIjRjZGMUU0Ii8+CiAgPGNpcmNsZSBjeD0iMTIwIiBjeT0iMTIwIiByPSIxMDgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzIyMzAxRiIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPHRleHQgeD0iMTIwIiB5PSIxNTgiIGZvbnQtZmFtaWx5PSJHZW9yZ2lhLCAnVGltZXMgTmV3IFJvbWFuJywgc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiIGZvbnQtc2l6ZT0iMTI4IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjMjIzMDFGIiBsZXR0ZXItc3BhY2luZz0iLTQiPkNCPC90ZXh0Pgo8L3N2Zz4K">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -25,7 +25,7 @@ button:hover,.btn:hover{transform:translateY(-1px);border-color:#A99B72;backgrou
 .danger{color:#A23B2E}.success{color:#3F6B3F}.ghost{background:transparent}.small{padding:7px 10px;font-size:12px}.active-btn{border-color:var(--gold);box-shadow:0 0 0 1px rgba(156,122,60,.25) inset}
 .layout{max-width:1500px;margin:auto;padding:22px;display:grid;grid-template-columns:220px 1fr;gap:20px}.sidebar{background:rgba(239,231,210,.86);border:1px solid var(--line);border-radius:var(--radius);padding:12px;height:fit-content;position:sticky;top:88px;box-shadow:var(--shadow)}
 .navbtn{width:100%;text-align:left;margin:4px 0;background:transparent;border-color:transparent;color:#4B5A44}.navbtn.active{background:linear-gradient(90deg,rgba(156,122,60,.18),rgba(156,122,60,.04));border-color:rgba(156,122,60,.32);color:#6B4F22}.nav-sep{height:1px;background:var(--line);margin:10px 4px}.content{min-width:0}.page{display:none}.page.active{display:block}
-.mobile-nav-select{display:none}
+.mobile-nav-select{display:none}.nav-sub{margin-left:14px;padding-left:8px;border-left:2px solid rgba(156,122,60,.25)}.nav-sub .navbtn{font-size:.95em;margin:2px 0}.nav-caret{float:right;opacity:.7}
 .title-row{display:flex;align-items:flex-end;gap:12px;margin:2px 0 16px}.title-row h2{margin:0;font-size:28px}.title-row p{margin:0 0 3px;color:var(--muted)}
 .cards{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:14px;margin-bottom:18px}.card{background:linear-gradient(160deg,rgba(251,248,239,.94),rgba(239,231,210,.94));border:1px solid var(--line);border-radius:var(--radius);padding:17px;box-shadow:var(--shadow)}.metric .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-family:'IBM Plex Mono',monospace}.metric .v{font-size:28px;font-weight:850;margin-top:4px;font-family:'Fraunces',Georgia,serif}.metric .hint{font-size:12px;color:var(--muted);margin-top:4px}
 .panel{background:rgba(239,231,210,.92);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);margin-bottom:18px}.panel h3{margin:0 0 14px;font-size:17px}.panel .sub{color:var(--muted);font-size:13px;margin-top:-8px;margin-bottom:14px}
@@ -122,22 +122,26 @@ label{display:block;font-size:12px;color:#4B5A44;margin:0 0 6px;font-weight:700;
 <select id="mobileNavSelect" class="mobile-nav-select">
   <option value="dashboard">◉ Dashboard</option>
   <option value="research">⌕ Price Research</option>
-  <option value="auction">⚡ Auction Intelligence</option>
-  <option value="collection">◎ My Collection</option>
-  <option value="add">＋ Add / Order</option>
-  <option value="wishlist">♡ Wishlist</option>
-  <option value="sales">↗ Sales</option>
+  <option value="auction">⚖️ Fair Price Check</option>
+  <optgroup label="My Collection">
+    <option value="collection">◎ My Collection</option>
+    <option value="add">＋ Add / Order</option>
+    <option value="wishlist">♡ Wishlist</option>
+    <option value="sales">↗ Sales</option>
+  </optgroup>
   <option value="settings">⚙ Research Settings</option>
 </select>
 <aside class="sidebar">
   <button class="navbtn active" data-page="dashboard">◉ Dashboard</button>
   <button class="navbtn" data-page="research">⌕ Price Research</button>
-  <button class="navbtn" data-page="auction">⚡ Auction Intelligence</button>
+  <button class="navbtn" data-page="auction">⚖️ Fair Price Check</button>
   <div class="nav-sep"></div>
-  <button class="navbtn" data-page="collection">◎ My Collection</button>
-  <button class="navbtn" data-page="add">＋ Add / Order</button>
-  <button class="navbtn" data-page="wishlist">♡ Wishlist</button>
-  <button class="navbtn" data-page="sales">↗ Sales</button>
+  <button class="navbtn nav-group-toggle" data-page="collection" aria-expanded="false" aria-controls="collectionSubnav">◎ My Collection <span class="nav-caret" aria-hidden="true">▸</span></button>
+  <div class="nav-sub" id="collectionSubnav" hidden>
+    <button class="navbtn" data-page="add">＋ Add / Order</button>
+    <button class="navbtn" data-page="wishlist">♡ Wishlist</button>
+    <button class="navbtn" data-page="sales">↗ Sales</button>
+  </div>
   <div class="nav-sep"></div>
   <button class="navbtn" data-page="settings">⚙ Research Settings</button>
 </aside>
@@ -293,7 +297,7 @@ label{display:block;font-size:12px;color:#4B5A44;margin:0 0 6px;font-weight:700;
 
 
 <section class="page" id="auction">
-  <div class="title-row"><div><h2>Auction Intelligence</h2><p>Estimate a sensible auction range or decide whether a current bid still makes sense.</p></div></div>
+  <div class="title-row"><div><h2>Fair Price Check</h2><p>Is this auction price fair? Check a listing or your own bid before you commit.</p></div></div>
   <div class="grid2">
     <div class="panel">
       <h3>Coin & auction inputs</h3>
@@ -674,8 +678,25 @@ function nav(page){document.querySelectorAll('.page').forEach(x=>x.classList.rem
    // <option>.selected is more broadly compatible across those quirks.
    for(const opt of $('mobileNavSelect').options) opt.selected=(opt.value===page);
  }
+ setCollectionSubnav(COLLECTION_PAGES.includes(page));
  window.scrollTo({top:0,behavior:'smooth'})}
-document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>nav(b.dataset.page));
+// My Collection groups Add / Order, Wishlist and Sales. The sub-items are shown
+// only after the user clicks My Collection (or while one of them is open).
+const COLLECTION_PAGES=['collection','add','wishlist','sales'];
+function setCollectionSubnav(open){
+ const sub=$('collectionSubnav'),toggle=document.querySelector('.nav-group-toggle');
+ if(!sub||!toggle)return;
+ sub.hidden=!open;
+ toggle.setAttribute('aria-expanded',String(open));
+ const caret=toggle.querySelector('.nav-caret'); if(caret) caret.textContent=open?'▾':'▸';
+}
+document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>{
+ // A second click on My Collection while it is open collapses the group.
+ if(b.classList.contains('nav-group-toggle') && b.classList.contains('active') && !$('collectionSubnav')?.hidden){
+   setCollectionSubnav(false); return;
+ }
+ nav(b.dataset.page);
+});
 if($('mobileNavSelect')) $('mobileNavSelect').onchange=e=>nav(e.target.value);
 
 function renderAll(){
