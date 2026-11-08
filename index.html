@@ -281,7 +281,17 @@ label{display:block;font-size:12px;color:#4B5A44;margin:0 0 6px;font-weight:700;
 </section>
 
 <section class="page" id="sales">
-  <div class="title-row"><div><h2>Sales</h2><p>Log a sale onto the existing master XLSX.</p></div></div>
+  <div class="title-row"><div><h2>Sales</h2><p>Price a coin and prepare its listing, then log the sale onto the master XLSX.</p></div></div>
+  <div class="panel" id="sellAssistant" style="margin-bottom:14px">
+    <h3>Sell Assistant</h3>
+    <div class="sub">CoinBids does not sell coins itself. It suggests a price from current dealer listings and verified metal value, and prepares a listing you can paste on eBay, Catawiki or Vendora.</div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="field"><label>Coin to sell</label><select id="sellCoin"></select></div>
+      <div class="field"><label>Platform fee % <span class="muted">(check the platform's current fees)</span></label><input id="sellFee" type="number" step="0.1" min="0" value="0"/></div>
+    </div>
+    <button id="sellRun" type="button" class="primary">Suggest price & prepare listing</button>
+    <div id="sellResult" class="muted" style="margin-top:12px">Choose a coin from your collection, or press <b>Sell</b> next to it in My Collection.</div>
+  </div>
   <div class="grid2">
     <form id="saleForm" class="panel"><h3>Mark as SOLD</h3>
       <div class="field"><label>Coin</label><select id="saleCoin"></select></div>
@@ -735,7 +745,7 @@ function renderTable(){
   const q=($('collectionSearch')?.value||'').toLowerCase(), sf=$('statusFilter')?.value||'';
   const data=coins.filter(c=>(!sf||c.status===sf)&&(!q||SCHEMA.some(k=>String(c[k]||'').toLowerCase().includes(q))));
   $('rowCount').textContent=`${data.length} records`;
-  $('collectionBody').innerHTML=data.length?data.map(c=>`<tr><td class="mono">${esc(c.id)}</td><td>${statusPill(c.status)}</td><td>${esc(c.country)}</td><td>${esc(c.denomination)}</td><td>${esc(c.year)}</td><td>${esc(c.variant||'—')}</td><td>${esc(c.grade||'—')}</td><td>${money(c.buy_price,c.currency)}</td><td>${money(c.sale_price,c.sale_currency)}</td><td><button class="small" onclick="researchCoin('${c.id}')">Research</button> ${c.status==='PENDING'?`<button class="small success" onclick="markReceived('${c.id}')">Received</button> `:''}<button class="small danger" onclick="deleteCoin('${c.id}')">Delete</button></td></tr>`).join(''):`<tr><td colspan="10" class="empty">No records.</td></tr>`;
+  $('collectionBody').innerHTML=data.length?data.map(c=>`<tr><td class="mono">${esc(c.id)}</td><td>${statusPill(c.status)}</td><td>${esc(c.country)}</td><td>${esc(c.denomination)}</td><td>${esc(c.year)}</td><td>${esc(c.variant||'—')}</td><td>${esc(c.grade||'—')}</td><td>${money(c.buy_price,c.currency)}</td><td>${money(c.sale_price,c.sale_currency)}</td><td><button class="small" onclick="researchCoin('${c.id}')">Research</button> ${c.status==='OWNED'?`<button class="small" onclick="sellCoin('${c.id}')">Sell</button> `:''}${c.status==='PENDING'?`<button class="small success" onclick="markReceived('${c.id}')">Received</button> `:''}<button class="small danger" onclick="deleteCoin('${c.id}')">Delete</button></td></tr>`).join(''):`<tr><td colspan="10" class="empty">No records.</td></tr>`;
 }
 $('collectionSearch').oninput=renderTable;$('statusFilter').onchange=renderTable;
 window.deleteCoin=id=>{if(confirm('Permanently delete this record?')){coins=coins.filter(c=>c.id!==id);save()}};
@@ -747,7 +757,8 @@ $('clearForm').onclick=()=>{$('coinForm').reset();$('fQty').value=1};
 $('wishForm').onsubmit=e=>{e.preventDefault();const t=nowISO();const c={id:uid(),status:'WISHLIST',country:$('wCountry').value.trim(),denomination:$('wDenom').value.trim(),year:$('wYear').value.trim(),mint:'',variant:$('wVariant').value.trim(),metal:'',grade:$('wGrade').value.trim(),catalog_ref:'',quantity:1,buy_price:'',currency:'EUR',vendor:'',order_date:'',received_date:'',certificate:'',notes:`Target max EUR: ${$('wTarget').value||'—'}${$('wNotes').value?' | '+$('wNotes').value:''}`,sale_price:'',sale_currency:'',sale_date:'',buyer:'',sale_notes:'',created_at:t,updated_at:t};coins.push(c);save();$('rFreeText').value=[c.denomination,c.country,c.year,c.variant].filter(Boolean).join(' ');$('rGrade').value=c.grade;nav('research');buildResearch();e.target.reset()};
 function renderWishlist(){const d=coins.filter(c=>c.status==='WISHLIST');$('wishList').innerHTML=d.length?d.map(c=>`<div style="padding:10px 0;border-bottom:1px solid #26303b"><b>${esc(coinLabel(c))}</b><div class="toolbar" style="margin:7px 0 0"><button class="small" onclick="researchCoin('${c.id}')">Find prices</button><button class="small success" onclick="orderWish('${c.id}')">Mark ordered</button></div></div>`).join(''):'<div class="muted">Your wishlist is empty.</div>'}
 
-function renderSaleSelect(){const d=coins.filter(c=>c.status==='OWNED');$('saleCoin').innerHTML=d.length?d.map(c=>`<option value="${c.id}">${esc(coinLabel(c))} — qty ${esc(c.quantity||1)}</option>`):'<option value="">No coins available</option>'}
+function renderSaleSelect(){const d=coins.filter(c=>c.status==='OWNED');const opts=d.length?d.map(c=>`<option value="${c.id}">${esc(coinLabel(c))} — qty ${esc(c.quantity||1)}</option>`).join(''):'<option value="">No coins available</option>';
+ for(const id of ['saleCoin','sellCoin']){const el=$(id);if(!el)continue;const keep=el.value;el.innerHTML=opts;if(keep&&d.some(c=>c.id===keep))el.value=keep;}}
 $('saleForm').onsubmit=e=>{
   e.preventDefault();
   const c=coins.find(x=>x.id===$('saleCoin').value);
@@ -772,6 +783,139 @@ $('saleForm').onsubmit=e=>{
   save();e.target.reset();$('saleQty').value=1;
   alert(sellQty>=owned?'The sale has been recorded in the master XLSX.':`Sold ${sellQty} of ${owned}. ${owned-sellQty} remain OWNED under the original record.`);
 };
+// ---------------------------------------------------------------------------
+// Sell Assistant. Pricing is deliberately conservative and explained:
+// dealer listings are ASKING prices (not sold prices), so a private seller is
+// offered tiers below/at them; verified intrinsic metal value is a floor; the
+// auction reserve/start use the LOW-confidence ratios of auction_sell_engine.py
+// (reserve 75% of low estimate, starting bid 60% of reserve) because dealer
+// asks alone are low-confidence evidence.
+// ---------------------------------------------------------------------------
+const SELL_RESERVE_FRACTION_LOW=0.75, SELL_START_FRACTION=0.60;
+function sellPriceTiers(asks,meltEUR){
+ const a=robustDealerSample(asks);
+ if(!a.length){
+   return meltEUR>0?{evidence:0,floorOnly:true,metalFloor:round2(meltEUR),quick:round2(meltEUR),competitive:round2(meltEUR),patient:round2(meltEUR),reserve:null,start:null,lowest:null,median:null,floored:[]}
+                   :null;
+ }
+ const lowest=Math.min(...a), med=median(a), p25=quantile(a,.25);
+ const raw={quick:lowest*0.85,competitive:lowest*0.95,patient:Math.max(med,lowest)};
+ const reserveRaw=p25*SELL_RESERVE_FRACTION_LOW;
+ const floor=meltEUR>0?meltEUR:0, floored=[];
+ const out={evidence:a.length,lowest:round2(lowest),median:round2(med),metalFloor:floor?round2(floor):null};
+ for(const [k,v] of Object.entries(raw)){ if(floor&&v<floor){floored.push(k);out[k]=round2(floor);} else out[k]=round2(v); }
+ out.reserve=round2(Math.max(reserveRaw,floor||0));
+ out.start=round2(out.reserve*SELL_START_FRACTION);
+ out.floored=floored;
+ return out;
+}
+function round2(x){return Number.isFinite(x)?Math.round(x*100)/100:null}
+function sellListingText(c,{countryEN,denomEN,specTitle,spec}){
+ const year=c.year||'', grade=c.grade||'';
+ const titleCore=specTitle?`${countryEN||c.country} ${specTitle} ${year}`:`${countryEN||c.country} ${denomEN||c.denomination} ${year} ${c.variant||''}`;
+ const titleEN=[titleCore,grade].join(' ').replace(/\s+/g,' ').trim().slice(0,80);
+ const titleEL=[c.country,c.denomination,year,c.variant,grade].filter(Boolean).join(' ').replace(/\s+/g,' ').trim().slice(0,80);
+ const comp=spec&&typeof spec.composition==='string'?spec.composition:'';
+ const rowsEN=[['Country',countryEN||c.country],['Denomination',denomEN||c.denomination],['Year',year],['Issue / theme',specTitle||c.variant],
+   ['Mint',c.mint],['Grade',grade],['Catalogue reference',c.catalog_ref],['Composition',comp],
+   ['Weight',spec?.weight_g!=null?`${spec.weight_g} g`:''],['Diameter',spec?.diameter_mm!=null?`${spec.diameter_mm} mm`:''],['Certificate',c.certificate]];
+ const rowsEL=[['Χώρα',c.country],['Ονομαστική αξία',c.denomination],['Έτος',year],['Έκδοση / θέμα',c.variant||specTitle],
+   ['Νομισματοκοπείο',c.mint],['Κατάσταση',grade],['Κατάλογος',c.catalog_ref],['Σύσταση',comp],
+   ['Βάρος',spec?.weight_g!=null?`${spec.weight_g} g`:''],['Διάμετρος',spec?.diameter_mm!=null?`${spec.diameter_mm} mm`:''],['Πιστοποιητικό',c.certificate]];
+ const body=rows=>rows.filter(([,v])=>v!=null&&String(v).trim()).map(([k,v])=>`${k}: ${String(v).trim()}`).join('\n');
+ return {
+   titleEN, titleEL,
+   descEN:`${titleEN}\n\n${body(rowsEN)}\n\nThe photos show the exact coin you will receive.`,
+   descEL:`${titleEL}\n\n${body(rowsEL)}\n\nΟι φωτογραφίες δείχνουν το ακριβές νόμισμα που θα παραλάβετε.`
+ };
+}
+let activeSellController=null, currentSellToken=0;
+async function runSellAssistant(id){
+ const c=coins.find(x=>x.id===id); const box=$('sellResult'); if(!box)return;
+ if(!c){box.textContent='Choose a coin from your collection first.';return;}
+ activeSellController?.abort('Superseded'); const ctrl=new AbortController(); activeSellController=ctrl;
+ const token=++currentSellToken; const isCurrent=()=>token===currentSellToken;
+ const ep=localStorage.getItem('coinbids_api_endpoint')||localStorage.getItem('numisvault_api_endpoint')||defaultApiEndpoint();
+ const q=[c.denomination,c.country,c.year,c.variant].filter(Boolean).join(' ');
+ box.innerHTML='Resolving coin identity and reading current dealer listings…';
+ let countryEN='',denomEN='',spec=null,specNote='',asks=[],marketNote='',melt=null;
+ const rr=await resolveCoinViaBackend(q,ep,{signal:ctrl.signal});
+ if(!isCurrent())return;
+ if(rr.ok){
+   const parsed=rr.parsed, best=rr.resolution?.status==='resolved'?rr.resolution.best:null;
+   const tEN=toEnglishTerms(parsed);
+   if(best){tEN.country=best.country||tEN.country;tEN.countryEN=best.country||tEN.country;tEN.catalogIds=best.catalog_ids||null;tEN.themeHint=(best.variants||[]).join(' ');}
+   if(!tEN.themeHint&&parsed.variant)tEN.themeHint=parsed.variant;
+   countryEN=tEN.country||''; denomEN=tEN.denom||'';
+   const specCoin={countryEN:tEN.country,denom:parsed.denom,year:parsed.year,variant:parsed.variant||'',catalogIds:tEN.catalogIds||null,themeHint:tEN.themeHint||''};
+   const variants=[q,...(rr.searchVariants||[]),...searchVariants(tEN)].filter((x,i,a)=>x&&a.indexOf(x)===i);
+   const [specRes,marketRes]=await Promise.allSettled([
+     getSharedCoinSpecMatch(ep,specCoin,q,{signal:ctrl.signal}),
+     fetch(ep,{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({coin:tEN,raw_query:q,variants,ship_to:getShipToCountry(),currency:'EUR',include_shipping:true,asset_type:'COIN',limit:2,sample_limit:12})}).then(r=>r.json().then(d=>({ok:r.ok,d})))
+   ]);
+   if(!isCurrent())return;
+   if(specRes.status==='fulfilled'){
+     const sr=specRes.value;
+     if(sr?.match){spec=sr.match; melt=await intrinsicMetalValueEUR(spec); if(!isCurrent())return;}
+     else if(sr?.ambiguous) specNote='Several catalogue issues match this coin; specifications were left out. Add the issue/theme to the collection record to include them.';
+   }
+   if(marketRes.status==='fulfilled'&&marketRes.value.ok){
+     const d=marketRes.value.d||{};
+     const src=(d.market_sample&&d.market_sample.length)?d.market_sample:(d.offers||[]);
+     asks=src.filter(o=>(o.currency||'EUR')==='EUR').map(o=>Number(o.price)).filter(x=>Number.isFinite(x)&&x>0);
+     if(!asks.length){const u=marketAvailabilityMessage(d);marketNote=u?`${u.title} ${u.detail}`:'No validated dealer listings were found for this coin.';}
+   }else marketNote='Dealer listings could not be loaded right now. Try again later.';
+ }else{
+   marketNote='The coin identity could not be resolved safely, so no price is suggested. Add country, denomination and year to the collection record.';
+ }
+ const meltEUR=melt?.valueEUR||null;
+ const tiers=sellPriceTiers(asks,meltEUR);
+ const text=sellListingText(c,{countryEN,denomEN,specTitle:spec?.title||'',spec});
+ renderSellResult(c,tiers,text,{marketNote,specNote,melt});
+}
+let lastSellRender=null;
+function renderSellResult(c,tiers,text,{marketNote,specNote,melt}){
+ lastSellRender=[c,tiers,text,{marketNote,specNote,melt}];
+ const box=$('sellResult'), fee=Math.max(0,Number($('sellFee')?.value)||0);
+ const eur=v=>v==null?'—':money(v,'EUR');
+ const net=v=>v==null?null:v*(1-fee/100);
+ const buy=(c.currency||'EUR')==='EUR'&&Number(c.buy_price)>0?Number(c.buy_price):null;
+ const profit=v=>(v==null||buy==null)?'':` • ${net(v)-buy>=0?'profit':'loss'} ${money(Math.abs(net(v)-buy),'EUR')} vs purchase`;
+ let html='';
+ if(tiers){
+   if(tiers.floorOnly){
+     html+=`<div class="notice"><strong>No dealer listings found.</strong> The only verified evidence is the metal value: <b>${eur(tiers.metalFloor)}</b>. Do not sell below it.</div>`;
+   }else{
+     html+=`<div class="muted">Based on ${tiers.evidence} current dealer listing${tiers.evidence===1?'':'s'} (asking prices, excluding shipping): lowest ${eur(tiers.lowest)}, median ${eur(tiers.median)}.${tiers.evidence<3?' <span class="warn">Very little evidence — treat these as rough guides.</span>':''}</div>`;
+     const row=(k,label,hint)=>`<tr><td><b>${label}</b><div class="muted" style="font-size:12px">${hint}</div></td><td><b>${eur(tiers[k])}</b>${tiers.floored.includes(k)?' <span class="muted">(raised to metal value)</span>':''}</td><td class="muted">net ${eur(net(tiers[k]))}${profit(tiers[k])}</td><td><button type="button" class="small" data-sell-price="${tiers[k]}">Use in sale form</button></td></tr>`;
+     html+=`<table style="margin-top:8px;width:100%"><tbody>`+
+       row('quick','Quick sale','15% below the cheapest dealer')+
+       row('competitive','Competitive','Just below the cheapest dealer')+
+       row('patient','Patient','Around the typical dealer price; may take longer')+
+       `</tbody></table>`;
+     html+=`<div style="margin-top:8px"><b>At auction:</b> reserve ${eur(tiers.reserve)}, starting bid ${eur(tiers.start)} <span class="muted">— conservative, because only dealer asking prices are available, not sold prices.</span></div>`;
+   }
+   if(melt) html+=`<div class="muted" style="margin-top:6px">Verified metal value: ${eur(melt.valueEUR)} (${esc(melt.metal)}, ${melt.fineGrams.toFixed(2)} g fine). Suggested prices never go below it.</div>`;
+   if(fee) html+=`<div class="muted" style="margin-top:6px">Net amounts subtract the ${fee}% platform fee. Shipping is charged to the buyer separately.</div>`;
+ }else{
+   html+=`<div class="warn">${esc(marketNote||'No price evidence available.')}</div>`;
+ }
+ if(tiers&&marketNote&&!tiers.floorOnly) html+=`<div class="muted" style="margin-top:6px">${esc(marketNote)}</div>`;
+ if(specNote) html+=`<div class="muted" style="margin-top:6px">${esc(specNote)}</div>`;
+ const block=(label,val,id)=>`<div class="field" style="margin-top:10px"><label>${label} <button type="button" class="small" data-copy="${id}">Copy</button></label>${val.includes('\n')?`<textarea id="${id}" rows="8" readonly>${esc(val)}</textarea>`:`<input id="${id}" readonly value="${esc(val)}"/>`}</div>`;
+ html+=`<h3 style="margin-top:16px">Listing text</h3><div class="grid2"><div>`+block('Title (English)',text.titleEN,'sellTitleEN')+block('Description (English)',text.descEN,'sellDescEN')+`</div><div>`+block('Τίτλος (Ελληνικά)',text.titleEL,'sellTitleEL')+block('Περιγραφή (Ελληνικά)',text.descEL,'sellDescEL')+`</div></div>`;
+ html+=`<div class="links" style="margin-top:10px"><a class="searchlink" href="https://www.ebay.com/sl/sell" target="_blank" rel="noopener">List on eBay</a> <a class="searchlink" href="https://www.catawiki.com/en/sell" target="_blank" rel="noopener">Consign on Catawiki</a> <a class="searchlink" href="https://www.vendora.gr/" target="_blank" rel="noopener">List on Vendora</a></div>`;
+ html+=`<div class="muted" style="margin-top:6px">Add your own photos of both sides. When the coin sells, log it below so your collection and profit stay correct.</div>`;
+ box.innerHTML=html;
+ box.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>{const el=$(b.dataset.copy);navigator.clipboard?.writeText(el.value).then(()=>{b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1500)});});
+ box.querySelectorAll('[data-sell-price]').forEach(b=>b.onclick=()=>{
+   $('saleCoin').value=c.id; $('salePrice').value=b.dataset.sellPrice; $('saleCurrency').value='EUR'; $('saleQty').value=1;
+   $('saleForm').scrollIntoView({behavior:'smooth',block:'start'}); $('salePrice').focus();
+ });
+}
+window.sellCoin=id=>{nav('sales');renderSaleSelect();if($('sellCoin'))$('sellCoin').value=id;runSellAssistant(id)};
+if($('sellRun')) $('sellRun').onclick=()=>runSellAssistant($('sellCoin')?.value);
+if($('sellFee')) $('sellFee').addEventListener('input',()=>{if(lastSellRender)renderSellResult(...lastSellRender)});
 function renderSales(){const d=coins.filter(c=>c.status==='SOLD').sort((a,b)=>String(b.sale_date).localeCompare(String(a.sale_date)));$('salesList').innerHTML=d.length?d.map(c=>`<div style="padding:10px 0;border-bottom:1px solid #26303b"><b>${esc(coinLabel(c))}</b><div style="margin-top:5px">${money(c.sale_price,c.sale_currency)} <span class="muted">• ${esc(c.sale_date||'')} • ${esc(c.buyer||'')}</span></div></div>`).join(''):'<div class="muted">No sales yet.</div>'}
 
 window.orderWish=id=>{const c=coins.find(x=>x.id===id);if(c){c.status='PENDING';c.order_date=new Date().toISOString().slice(0,10);c.updated_at=nowISO();save()}};
