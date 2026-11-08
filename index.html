@@ -336,6 +336,7 @@ label{display:block;font-size:12px;color:#4B5A44;margin:0 0 6px;font-weight:700;
   <div class="field"><label>Catalogue composition</label><input id="auctionComposition" readonly placeholder="—"/></div>
  </div>
  <div id="auctionMetalNote" class="muted" style="margin-top:8px"></div>
+ <div id="auctionSpecPicker" style="margin-top:10px;display:none"></div>
 </div>
 <section class="page" id="settings">
   <div class="title-row"><div><h2>Research Settings</h2><p>How automatic price search works.</p></div></div>
@@ -1220,8 +1221,14 @@ function coinSpecCacheSet(key,match){
  }
  _numistaCache.set(key,{match,at:Date.now()});
 }
-async function getSharedCoinSpecMatch(endpoint,coin,rawQuery,{force=false,signal=null,fast=false}={}){
- const key=coinSpecCacheKey(coin)+"|"+String(rawQuery||"").trim().toLowerCase();
+// User-confirmed catalogue choices, keyed by the same identity key as the
+// spec cache. Kept in memory only: a choice applies to this exact search.
+const _specSelections=new Map();
+function specSelectionKey(coin,rawQuery){return coinSpecCacheKey(coin)+"|"+String(rawQuery||"").trim().toLowerCase();}
+async function getSharedCoinSpecMatch(endpoint,coin,rawQuery,{force=false,signal=null,fast=false,selectedId=null}={}){
+ const selKey=specSelectionKey(coin,rawQuery);
+ if(selectedId==null && _specSelections.has(selKey)) selectedId=_specSelections.get(selKey);
+ const key=selKey+(selectedId!=null?"|sel:"+selectedId:"");
  if(!force && key){
    const cached=coinSpecCacheGet(key);
    if(cached)return {match:cached,cached:true,error:null,ambiguous:false,candidates:[]};
@@ -1238,7 +1245,7 @@ async function getSharedCoinSpecMatch(endpoint,coin,rawQuery,{force=false,signal
    const timer=setTimeout(()=>ctrl.abort('Coin specification lookup exceeded 60 seconds'),60000);
    let res;
    try{
-     res=await fetch(base+'/api/coin-lookup',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctrl.signal,body:JSON.stringify({coin,raw_query:rawQuery||'',fast:!!fast})});
+     res=await fetch(base+'/api/coin-lookup',{method:'POST',headers:{'Content-Type':'application/json'},signal:ctrl.signal,body:JSON.stringify({coin,raw_query:rawQuery||'',fast:!!fast,...(selectedId!=null?{selected_numista_id:selectedId}:{})})});
    }finally{
      clearTimeout(timer);
      if(signal) signal.removeEventListener('abort',relayAbort);
@@ -1249,13 +1256,61 @@ async function getSharedCoinSpecMatch(endpoint,coin,rawQuery,{force=false,signal
    const m=data.match||null;
    if(m){
      coinSpecCacheSet(key,m);
+     if(selectedId!=null) _specSelections.set(selKey,selectedId);
+   }else if(selectedId!=null && data.selection_rejected){
+     _specSelections.delete(selKey);
    }
    return {match:m,cached:false,error:m?null:(data.note||data.error||'No reliable coin specification match found.'),ambiguous:false,candidates:[],data};
  }catch(e){
    return {match:null,cached:false,error:(e?.name==='AbortError'?'Coin specification lookup timed out. Please retry.':(e?.message||String(e))),ambiguous:false,candidates:[],data:null};
  }
 }
-async function fetchCatalogLookup(endpoint,t,researchToken){
+// Renders the validated catalogue candidates as selectable cards with each
+// candidate's OWN specifications. Nothing is loaded until the user confirms.
+function renderSpecCandidatePicker(container,candidates,note,onConfirm){
+ const list=(candidates||[]).slice(0,5);
+ if(!list.length){
+   container.innerHTML='<strong>Coin type needs clarification.</strong><div class="muted" style="margin-top:6px">'+esc(note||'Add the issue/theme to your search so CoinBids does not choose arbitrarily.')+'</div>';
+   return;
+ }
+ const years=c=>(c.min_year!=null||c.max_year!=null)?(c.min_year===c.max_year||c.max_year==null?String(c.min_year??''):`${c.min_year??'?'}–${c.max_year}`):'';
+ const fieldLabel={composition:'composition',weight_g:'weight',diameter_mm:'diameter'};
+ const card=(c,i)=>{
+   const missing=(c.missing_fields||[]).map(f=>fieldLabel[f]||f);
+   const imgs=[c.obverse_image,c.reverse_image].filter(Boolean).map(u=>`<img src="${esc(u)}" alt="" style="width:56px;height:56px;object-fit:contain;border-radius:6px;border:1px solid var(--line)">`).join('');
+   return `<label class="spec-choice" data-idx="${i}" style="display:flex;gap:10px;align-items:flex-start;margin-top:8px;padding:8px;border:1px solid var(--line);border-radius:8px;cursor:pointer">`+
+     `<input type="radio" name="specChoice" value="${i}" style="margin-top:4px">`+
+     (imgs?`<div style="display:flex;gap:4px">${imgs}</div>`:'')+
+     `<div><strong>${esc(c.title||'—')}</strong>${c.issuer?` <span class="muted">(${esc(c.issuer)})</span>`:''}`+
+     `<div class="muted" style="margin-top:4px">`+
+       [years(c)?`Years: ${esc(years(c))}`:'',
+        c.weight_g!=null?`Weight: ${esc(c.weight_g)} g`:'',
+        c.diameter_mm!=null?`Diameter: ${esc(c.diameter_mm)} mm`:'',
+        c.composition?`Composition: ${esc(typeof c.composition==='string'?c.composition:JSON.stringify(c.composition))}`:'',
+        c.id!=null?`Numista #${esc(c.id)}`:''].filter(Boolean).join(' • ')+
+     `</div>`+
+     (missing.length?`<div class="warn" style="margin-top:4px">Missing in catalogue: ${esc(missing.join(', '))}</div>`:'')+
+     (c.url?`<a class="searchlink" href="${esc(c.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Catalogue source</a>`:'')+
+     `</div></label>`;
+ };
+ container.innerHTML='<strong>Several catalogue issues match this search.</strong>'+
+   '<div class="muted" style="margin-top:6px">Choose the issue you mean. Metal content and weight are loaded only for the confirmed choice.</div>'+
+   list.map(card).join('')+
+   '<div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button type="button" class="btn spec-confirm" disabled>Confirm selection</button><span class="muted spec-confirm-hint">Select one issue first.</span></div>';
+ const btn=container.querySelector('.spec-confirm'), hint=container.querySelector('.spec-confirm-hint');
+ let chosen=null;
+ container.querySelectorAll('input[name="specChoice"]').forEach(r=>r.addEventListener('change',()=>{
+   chosen=list[Number(r.value)];
+   btn.disabled=false;
+   hint.textContent=`Selected: ${chosen.title||'Numista #'+chosen.id}`;
+ }));
+ btn.addEventListener('click',()=>{
+   if(!chosen||chosen.id==null)return;
+   btn.disabled=true; hint.textContent='Loading specifications for the confirmed issue…';
+   onConfirm(chosen);
+ });
+}
+async function fetchCatalogLookup(endpoint,t,researchToken,selectedId=null){
  const box=$('catalogBox'); if(!box) return;
  if(activeCatalogLookupController) activeCatalogLookupController.abort('Superseded by a newer lookup');
  const catalogCtrl=new AbortController();
@@ -1265,13 +1320,20 @@ async function fetchCatalogLookup(endpoint,t,researchToken){
  $('mMetal').value='none'; $('mWeight').value=''; $('mFineness').value=''; if($('mFineGrams')) $('mFineGrams').value='—'; if($('mComposition')) $('mComposition').value='—';
  $('mFineness').disabled=true; $('mFineness').placeholder='Waiting for catalogue data…'; $('mValue').value='';
  try{
-   const rr=await getSharedCoinSpecMatch(endpoint,t,($('rFreeText')?.value||'').trim(),{signal:catalogCtrl.signal});
+   const rr=await getSharedCoinSpecMatch(endpoint,t,($('rFreeText')?.value||'').trim(),{signal:catalogCtrl.signal,selectedId});
    if(token!==currentCatalogToken || (researchToken!=null && researchToken!==currentResearchToken)) return;
    if(rr.error && !rr.ambiguous && rr.error.startsWith('HTTP ')){ box.innerHTML=`<span style="color:var(--red)">Coin specification ${esc(rr.error)}</span>`; return; }
    if(rr.ambiguous){
-     $('mResultBox').textContent=rr.data?.note||'Specify the issue or coin type before calculating metal content.';
-     box.innerHTML='<strong>Coin type needs clarification.</strong><div class="muted" style="margin-top:6px">'+esc(rr.data?.note||'Add the issue/theme to your search so CoinBids does not choose arbitrarily.')+'</div>'+
-       (rr.candidates||[]).slice(0,5).map(c=>`<div style="margin-top:8px">${esc(c.title||'—')}${c.issuer?` — ${esc(c.issuer)}`:''}${c.url?` — <a class="searchlink" href="${esc(c.url)}" target="_blank" rel="noopener">Catalogue source</a>`:''}</div>`).join('');
+     $('mResultBox').textContent='Choose the correct issue above before calculating metal content.';
+     renderSpecCandidatePicker(box,rr.candidates,rr.data?.note,c=>{
+       if(researchToken!=null && researchToken!==currentResearchToken)return;
+       fetchCatalogLookup(endpoint,t,researchToken,c.id);
+     });
+     return;
+   }
+   if(rr.data?.selection_rejected){
+     box.innerHTML='<span class="warn">'+esc(rr.data.note||'The selected catalogue entry does not match the searched coin.')+' Run the search again to choose another issue.</span>';
+     $('mResultBox').innerHTML='<span class="warn">Metal content not loaded: the selected issue was rejected.</span>';
      return;
    }
    const m=rr.match;
@@ -2045,6 +2107,15 @@ if($('aAnalyze')) $('aAnalyze').onclick=async()=>{
      catalogIds:b.catalog_ids||null,themeHint:(b.variants||[]).join(' ')};
    const specResult=await getSharedCoinSpecMatch(ep,specCoin,q,{signal:auctionCtrl.signal,fast:false});
    if(auctionToken!==currentAuctionToken)return;
+   if(specResult?.ambiguous && $('auctionMetalCard') && $('auctionSpecPicker')){
+     $('auctionMetalCard').style.display='';
+     const picker=$('auctionSpecPicker');picker.style.display='';
+     if($('auctionMetalNote'))$('auctionMetalNote').textContent='Metal content is not loaded until you confirm the issue. Confirming re-runs the analysis with that issue.';
+     renderSpecCandidatePicker(picker,specResult.candidates,specResult.data?.note,c=>{
+       _specSelections.set(specSelectionKey(specCoin,q),c.id);
+       $('aAnalyze')?.click();
+     });
+   }else if($('auctionSpecPicker')){$('auctionSpecPicker').style.display='none';$('auctionSpecPicker').innerHTML='';}
    if(specResult?.match){
      auctionSpecMatch=specResult.match;
      if($('auctionMetalCard'))$('auctionMetalCard').style.display='';

@@ -2832,6 +2832,10 @@ def coin_lookup():
     query=" ".join(str(x) for x in [coin.get("countryEN") or coin.get("country"),coin.get("denom"),coin.get("year"),coin.get("theme") or coin.get("variant")] if x).strip()
     if not query:query=(payload.get("raw_query") or "").strip()
     if not query:return jsonify({"error":"empty query"}),400
+    selected_id=payload.get("selected_numista_id")
+    if selected_id not in (None,""):
+        body,status=numista_selected_lookup(coin,selected_id)
+        return jsonify(body),status
     # Database first: a complete local record satisfies the request without
     # spending quota or making an external request. Keep an incomplete hit
     # as a fallback while trying to enrich it from a validated listing.
@@ -2936,12 +2940,31 @@ def coin_lookup():
         return jsonify({"match":None,"note":"No reliable Numista match satisfied country + denomination + year.","rejected":rejected[:8]})
     # Multiple validated candidates with no explicit variant = ambiguous, do not choose arbitrarily.
     if len(survivors)>1 and not (coin.get("variant") or "").strip():
+        # Return each candidate with the specifications already fetched for
+        # validation (no extra API calls), so the user can pick the correct
+        # issue in-app. Specs are bound to each candidate's own record and are
+        # never merged across candidates.
         candidates=[]
-        for conf,detail,cand,_ in survivors[:5]:
-            tid=numista_pick(detail,"id") or numista_pick(cand,"id")
-            candidates.append({"id":tid,"title":numista_pick(detail,"title") or numista_pick(cand,"title"),"url":f"https://en.numista.com/catalogue/pieces{tid}.html","confidence":conf,"issuer":numista_pick(detail,"issuer.name") or flatten_text(numista_pick(detail,"issuer"))})
-        return jsonify({"match":None,"ambiguous":True,"candidates":candidates,"note":"Multiple exact catalogue candidates remain; specify the issue/theme."})
-    conf,detail,best,issues=survivors[0];tid=numista_pick(detail,"id") or numista_pick(best,"id")
+        for conf,detail,cand,cand_issues in survivors[:5]:
+            option=numista_match_from_detail(coin,detail,cand,cand_issues,conf)
+            option["min_year"]=numista_pick(detail,"min_year")
+            option["max_year"]=numista_pick(detail,"max_year")
+            option["missing_fields"]=[k for k in ("composition","weight_g","diameter_mm") if option.get(k) in (None,"")]
+            candidates.append(option)
+        return jsonify({"match":None,"ambiguous":True,"candidates":candidates,
+                        "selection_required":True,
+                        "note":"Multiple exact catalogue candidates remain. Choose the correct issue to load its specifications."})
+    conf,detail,best,issues=survivors[0]
+    return jsonify({"provider":"numista","match":numista_match_from_detail(coin,detail,best,issues,conf)})
+
+
+def numista_match_from_detail(coin,detail,cand,issues,conf):
+    """Build a specification match from ONE validated Numista type record.
+
+    Weight/diameter/composition prefer the issue row for the requested year
+    and otherwise fall back to the same type record — never to another type."""
+    cand=cand or {}
+    tid=numista_pick(detail,"id") or numista_pick(cand,"id")
     wanted_year=str(coin.get("year") or "").strip()
     issue_match=None
     if wanted_year and issues:
@@ -2956,15 +2979,48 @@ def coin_lookup():
     if issue_match:
         weight=numista_pick(issue_match,"weight","weight_g") or weight
         diameter=numista_pick(issue_match,"size","diameter","diameter_mm") or diameter
-    return jsonify({"provider":"numista","match":{
-        "id":tid,"title":numista_pick(detail,"title") or numista_pick(best,"title"),
+    return {
+        "id":tid,"title":numista_pick(detail,"title") or numista_pick(cand,"title"),
         "issuer":numista_pick(detail,"issuer.name") or flatten_text(numista_pick(detail,"issuer")),
         "composition":composition,"weight_g":weight,
         "diameter_mm":diameter,
         "obverse_image":numista_pick(detail,"obverse.picture","obverse_picture","obverse.thumbnail"),
         "reverse_image":numista_pick(detail,"reverse.picture","reverse_picture","reverse.thumbnail"),
         "url":f"https://en.numista.com/catalogue/pieces{tid}.html","match_class":"EXACT" if conf>=.75 else "STRONG","confidence":conf
-    }})
+    }
+
+
+def numista_selected_lookup(coin,selected_id):
+    """Load specifications for the Numista type the user explicitly chose.
+
+    The choice is still validated against the resolved identity (issuer,
+    denomination, year, theme), so a stale or tampered id cannot attach
+    another coin's metal content to this search."""
+    try:
+        tid=int(str(selected_id).strip())
+    except Exception:
+        return {"match":None,"error":"Invalid catalogue selection."},400
+    detail,derr=numista_get_type(tid)
+    if derr or not detail:
+        return {"match":None,"error":derr or "Selected catalogue entry could not be loaded."},200
+    reasons=validate_numista_detail_precheck(coin,detail)
+    if not _theme_issue_gate(coin,str(numista_pick(detail,"title") or "")):
+        reasons.append("THEME_MISMATCH")
+    issues=[]
+    if not reasons:
+        issues,_=numista_get_issues(tid)
+        more,conf=validate_numista_detail(coin,detail,issues)
+        reasons.extend(more)
+    else:
+        conf=0.0
+    if reasons:
+        return {"match":None,"selection_rejected":True,
+                "rejected":[{"id":tid,"title":numista_pick(detail,"title"),"reasons":list(dict.fromkeys(reasons))}],
+                "note":"The selected catalogue entry does not match the searched coin."},200
+    match=numista_match_from_detail(coin,detail,{},issues,conf)
+    match["match_class"]="USER_SELECTED"
+    match["user_selected"]=True
+    return {"provider":"numista","match":match},200
 
 @app.post("/api/resolve-coin")
 def resolve_coin():
